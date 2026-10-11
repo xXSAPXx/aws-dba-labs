@@ -13,7 +13,7 @@
   args:
     creates: "{{ postgresql_bin_dir }}/postgres"
 
-- name: Install PostgreSQL, pgBackRest, pg_repack and pg_stat_monitor
+- name: Install PostgreSQL, pgBackRest, pg_repack, pg_stat_monitor and pgAudit
   ansible.builtin.dnf:
     name: "{{ postgresql_packages }}"
     state: present
@@ -84,6 +84,17 @@
   become: true
   become_user: postgres
 
+# pgAudit logs through the server (shared_preload_libraries). Its extension adds the event triggers that give
+# each audit line the type and name of the object changed. template1: databases created later inherit it.
+- name: Create the pgaudit extension in postgres and template1
+  community.postgresql.postgresql_ext:
+    name: pgaudit
+    schema: public
+    login_db: "{{ item }}"
+  loop: [postgres, template1]
+  become: true
+  become_user: postgres
+
 - name: Create the PMM monitoring user (no superuser)
   community.postgresql.postgresql_user:
     name: "{{ postgresql_monitoring_user }}"
@@ -130,6 +141,18 @@
   community.postgresql.postgresql_db:
     name: "{{ item.name }}"
     owner: "{{ item.owner }}"
+  loop: "{{ postgresql_app_databases }}"
+  loop_control:
+    label: "{{ item.name }}"
+  become: true
+  become_user: postgres
+
+# For databases that existed before the extension was added to template1.
+- name: Create the pgaudit extension in the application databases
+  community.postgresql.postgresql_ext:
+    name: pgaudit
+    schema: public
+    login_db: "{{ item.name }}"
   loop: "{{ postgresql_app_databases }}"
   loop_control:
     label: "{{ item.name }}"
