@@ -1,11 +1,15 @@
 ---
-# Settings for /etc/dnf/dnf.conf. Rocky's mirror list hands out mirrors at random, and by default dnf stays
-# on a slow one as long as it sends 1,000 bytes per second: one such mirror made a server's first install
+# Settings for /etc/dnf/dnf.conf, for the repositories that still use mirrors (EPEL). By default dnf stays
+# on a slow mirror as long as it sends 1,000 bytes per second: one such mirror made a server's first install
 # take 7 minutes. With these, dnf leaves a mirror that is slower than `minrate` for `timeout` seconds (or
 # doesn't answer within `timeout`) and tries the next one.
 common_dnf_options:
   minrate: 250k
   timeout: 10
+
+# Rocky Linux only: take packages from the official server (dl.rockylinux.org) instead of a mirror chosen at
+# random. Mirrors can be slow or days behind; the official server is neither. false keeps the mirror list.
+common_rocky_official_server: true
 
 # Admin tools installed on every lab server.
 common_packages:
