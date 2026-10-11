@@ -110,11 +110,17 @@ def migration_behind_report(run):
     return result + "; the schema is unchanged"
 
 
+ACTS_WITHIN = 0.4  # dropped-table first tries in this part of its time limit
+
+
 def dropped_table(run):
     """A cleanup script meant for staging is run against production."""
     # The moment is random and is not logged or annotated: finding it is part of the drill. The scenario
     # stays "running" for its whole time limit, so its end on the dashboards does not give the moment away.
-    if run.wait(random.uniform(0, run.seconds * 0.8)):
+    # The first attempt falls in the first part of the time limit (ACTS_WITHIN). The rest is for trying again
+    # while a report holds the table: by default 6 minutes, more than the longest report takes (5 minutes).
+    retry = float(run.settings.get("retry_seconds", 20))
+    if run.wait(random.uniform(0, run.seconds * ACTS_WITHIN)):
         return "stopped before it dropped anything"
     conn = run.connect("migrator", "psql")
     attempts = 0
@@ -124,10 +130,11 @@ def dropped_table(run):
             conn.execute("DROP TABLE shop.orders CASCADE")
             break
         except Exception as exc:
-            if getattr(exc, "sqlstate", None) != "55P03":  # anything but a lock timeout
-                raise
-            if run.wait(5):  # a long transaction holds the table: shop_migrator's lock_timeout ended the attempt
-                return f"nothing was dropped: shop.orders was held by another transaction for all {attempts} attempts"
+            if getattr(exc, "sqlstate", None) != "55P03":  # not a lock timeout: cancelled, session terminated, ...
+                return f"nothing was dropped: attempt {attempts} of the DROP was ended ({short_error(exc)})"
+            # A long transaction holds the table, and shop_migrator's lock_timeout ended the attempt.
+            if run.wait(retry):
+                return f"nothing was dropped: shop.orders was held by another transaction at all {attempts} attempts"
     conn.close()
     while not run.wait(5):
         pass
@@ -173,18 +180,21 @@ SCENARIOS = {
         "summary": "A cleanup script meant for staging is run against production: DROP TABLE shop.orders CASCADE.",
         "runs_as": "shop_migrator, application psql",
         "does": [
-            "At a random moment within the time limit: DROP TABLE shop.orders CASCADE. When exactly is for you to find out.",
+            "At a random moment: DROP TABLE shop.orders CASCADE. When exactly is for you to find out.",
             "CASCADE also removes the foreign keys that seven other tables have to orders.",
             "Checkouts, payments, shipping, order history and the reports fail: the table does not exist.",
-            "If a long transaction holds the table, the DROP gives up after shop_migrator's lock_timeout of 5 s and tries again.",
+            "If a report holds the table, the DROP gives up after shop_migrator's lock_timeout of 5 s and tries again "
+            "every 20 s until the time limit. Each attempt holds up the statements on orders for those 5 s.",
+            "Cancel the DROP or terminate its session while it waits, and nothing is dropped.",
         ],
         "switches_off": "Nothing. Whoever acts as the owner of a table may drop it. The only protection is a backup.",
         "leaves": (
             "THE TABLE STAYS DROPPED. Neither the time limit nor `labapp scenario stop` brings it back. "
             "The way back is a restore. The lab has no backups yet: until it does, rebuild the shop database "
-            "(lab README, \"Reset the shop database\", about 6 minutes)."
+            "(lab README, \"Reset the shop database\", about 8 minutes)."
         ),
-        "seconds": 300,
+        "seconds": 600,
+        "acts_within": ACTS_WITHIN,
         "connections": ["migrator"],
         "confirm": "orders",  # the scenario only starts with: --confirm orders
         "run": dropped_table,
@@ -199,8 +209,11 @@ def minutes(seconds):
 def describe(name, seconds=None):
     """What a scenario does, as text for the command line."""
     spec = SCENARIOS[name]
-    limit = minutes(seconds or spec["seconds"])
-    header = f"acts at a random moment within {limit}" if spec.get("confirm") else f"ends by itself after {limit}"
+    seconds = seconds or spec["seconds"]
+    limit = minutes(seconds)
+    header = f"ends by itself after {limit}"
+    if "acts_within" in spec:
+        header = f"acts at a random moment within {minutes(round(seconds * spec['acts_within']))}, ends after {limit}"
     lines = [
         f"{name}  ({header})",
         f"  {spec['summary']}",

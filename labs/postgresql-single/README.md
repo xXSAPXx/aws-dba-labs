@@ -38,7 +38,7 @@ terraform init
 terraform apply              # about 3 minutes
 
 cd ../ansible
-ansible-playbook site.yml    # about 10 minutes on the first run
+ansible-playbook site.yml    # about 14 minutes on the first run, 4 after that
 ```
 
 `terraform apply` also writes the SSH config (`~/.ssh/aws-postgresql-lab.conf`) and the Ansible inventory (`ansible/inventory.ini`) with the new IPs. The playbook installs PostgreSQL and PMM, generates the lab passwords into `ansible/credentials/`, registers PostgreSQL in PMM, builds the shop database with Liquibase (the first run also generates its data, about 4 minutes), and starts the application: the labapp probe and the shop workload.
@@ -211,6 +211,7 @@ The `grep` runs in a root shell because only `postgres` and root can read the lo
 - **`log_statement` is off,** because pgAudit replaces it. PostgreSQL's own DDL logging would write each change a second time, and a `CREATE USER ... PASSWORD '...'` in clear text.
 - **A superuser can switch the audit off,** so it is not proof against the people it audits unless the log also leaves the server.
 - **A statement is logged when it runs.** A DDL statement that is cancelled while it still waits for its lock leaves no audit line.
+- **A `DROP` writes one line for every object that goes with it.** `DROP TABLE shop.orders CASCADE` leaves 59 lines: the table, its sequence, 5 indexes, 12 constraints, 4 column defaults and the 36 internal triggers of its foreign keys. The table's own line is the one with `DROP TABLE,TABLE,`.
 - **A refused statement gets no audit line, but it is still in the log.** When a user lacks the permission (`must be owner`, `permission denied`), PostgreSQL itself logs the error and, on the next line, the full statement with the user, application and client address. That covers every refused command, `TRUNCATE` and `pg_terminate_backend()` included. Find them with `grep -B1 STATEMENT:` or by the error text.
 - **A failed `CREATE ROLE ... PASSWORD` puts the password in the log.** pgAudit hides passwords in its own lines, but the error line above carries the statement as it was typed. Set passwords with `\password` in psql, which sends only the hash.
 
@@ -228,7 +229,7 @@ cd labs/postgresql-single/ansible
 ansible-playbook site.yml        # creates the database, runs the migrations, generates the data, starts the workload
 ```
 
-It takes about 6 minutes, most of it the data. The audit log keeps the `DROP DATABASE`, like every other schema change.
+It takes about 8 minutes: 4 for the playbook to check everything else, 4 for the data. The audit log keeps the `DROP DATABASE`, like every other schema change.
 
 ## Break, fix, reset
 

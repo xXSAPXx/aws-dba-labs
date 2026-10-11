@@ -342,7 +342,8 @@ def cmd_scenario(args):
         left = reply["ends_by_itself_in_seconds"]
         print(describe(args.name, left))
         if needs:
-            print(f"\nStarted. It acts within {minutes(left)}. To call it off before it has acted: labapp scenario stop {args.name}")
+            acts = minutes(round(left * SCENARIOS[args.name].get("acts_within", 1)))
+            print(f"\nStarted. It acts within {acts}. To call it off before it has acted: labapp scenario stop {args.name}")
         else:
             print(f"\nStarted. It ends by itself in {minutes(left)}. To end it now: labapp scenario stop {args.name}")
         return
