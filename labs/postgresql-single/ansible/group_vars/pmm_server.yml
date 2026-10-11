@@ -35,7 +35,7 @@ postgresql_client_pgpass:
 liquibase_projects:
   - name: shop
     changelog_dir: "{{ playbook_dir }}/../../../schema/shop"
-    url: "jdbc:postgresql://{{ groups['postgresql'][0] }}:5432/shop"
+    url: "jdbc:postgresql://{{ groups['postgresql'][0] }}:5432/shop?ApplicationName=liquibase" # the name PostgreSQL shows for its sessions
     username: shop_migrator
     password: "{{ postgresql_shop_migrator_password }}"
     parameters:
