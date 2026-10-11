@@ -100,6 +100,31 @@ The cycles fit a 1–2 hour lab. Minutes after the service starts (it starts at 
 
 The flash sales, `bi_extract`, `cart_cleanup` and `stock_recount` are marked in purple on the dashboard.
 
+## Scenarios: incidents on demand
+
+A scenario plays a person or a tool doing something that goes wrong in production. You start it when you want a drill, find it with the dashboards and pg_activity, and fix it. Nothing starts one by schedule.
+
+```bash
+labapp scenario list                          # every scenario: what it does and what it switches off
+labapp scenario run forgotten-transaction     # start one
+labapp scenario run migration-behind-report --seconds 120
+labapp scenario status                        # what is running, and when it ends by itself
+labapp scenario stop                          # end them now (or: stop NAME)
+```
+
+| Scenario | Runs as | What happens | Switches off |
+|---|---|---|---|
+| `forgotten-transaction` | `shop_support`, from `psql` | Updates the 50,000 most active customers and never commits. The session sits idle in its transaction and keeps the row locks, so logins of those customers fail with `lock_timeout` | Nothing. `shop_support` has no `idle_in_transaction_session_timeout`, so nothing ends the transaction but you |
+| `migration-behind-report` | `shop_migrator`, from `liquibase`, behind a report of `shop_analytics` | An `ALTER TABLE shop.orders` waits for a long report to finish. Every statement on `orders` queues behind the waiting `ALTER`: checkouts, payments, shipping, order history | `SET lock_timeout = 0` in the migration's session. With `shop_migrator`'s own 5 s, the `ALTER` gives up and the application recovers by itself |
+
+- **Each scenario says which protection it switches off.** That is the staged mistake, not the lab's normal setup. It is shown by `list` and `run`, logged, and written into the dashboard annotation.
+- **Each ends by itself:** `forgotten-transaction` rolls back after 10 minutes, and `migration-behind-report` withdraws its `ALTER` after 5. `--seconds` changes that for one run.
+- **No change is kept.** Both end in a rollback: the schema never changes and no customer record is altered. The rolled-back update does leave dead rows in `customers` for autovacuum, like any rolled-back update.
+- **They end when you fix them.** Terminate the forgotten session, the migration or the report in PostgreSQL, and the scenario notices and finishes.
+- **On the dashboards:** a scenario shows on the "Running" timeline of **Lab: Application** and as a purple annotation. Who it blocks is on **PostgreSQL lock blocking**.
+
+A scenario needs traffic to hurt: with the workload paused, nobody waits behind it.
+
 ## Commands
 
 On the PMM server:
@@ -115,6 +140,7 @@ labapp load pause               # stop sending requests (reports and batch jobs 
 labapp load resume
 labapp load flash-sale 300      # a 5-minute flash sale, now
 labapp load run stock_recount   # run a report or batch job now
+labapp scenario list            # incidents on demand, see above
 journalctl -u labapp-workload -f
 ```
 
@@ -156,6 +182,7 @@ The role's defaults (`ansible/roles/labapp/defaults/main.yml`), overridable in t
 | `labapp_workload_wave` | `{period: 3600, amplitude: 0.4}` | The traffic cycle |
 | `labapp_workload_flash_sale` | every 30 min, first at 20, 3 min, 3× | |
 | `labapp_workload_jobs` | the schedule above | `every`, `first` and `target` in seconds; `stock_recount` also takes `mode` |
+| `labapp_workload_scenarios` | 10 min and 5 min | `seconds` each scenario runs before it ends by itself; `forgotten_transaction` also takes `customers` |
 
 ## Metrics
 
@@ -176,5 +203,6 @@ The probe serves port 9300 and the workload port 9302 (`/metrics`), collected by
 | `labapp_load_base_rate`, `labapp_load_target_rate` | Base and current target rate, requests per second |
 | `labapp_load_flash_sale`, `labapp_load_paused` | 1 during a flash sale, 1 while paused |
 | `labapp_job_active{job_name}` | 1 while a report or batch job runs |
+| `labapp_scenario_active{scenario}` | 1 while a scenario runs |
 | `labapp_job_runs_total{job_name, result}` | Job runs, `result` = ok / error |
 | `labapp_job_last_duration_seconds{job_name}` | Duration of the last run |

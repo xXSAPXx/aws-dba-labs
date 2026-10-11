@@ -53,6 +53,13 @@ postgresql_app_users:
     conn_limit: 5
     configuration:
       statement_timeout: 10min
+  # People, not programs: support staff fixing customer records by hand in psql. Like in many companies,
+  # nothing limits how long their transactions may stay open (no idle_in_transaction_session_timeout).
+  - name: shop_support
+    password: "{{ postgresql_shop_support_password }}"
+    conn_limit: 5
+    configuration:
+      statement_timeout: 60s
 postgresql_memberships:
   - groups: [shop_owner]
     target_roles: [shop_migrator]
@@ -69,5 +76,5 @@ postgresql_pmm_server_address: "{{ hostvars[groups['pmm_server'][0]]['private_ip
 postgresql_hba_rules:
   - { database: bench, user: bench, address: "{{ postgresql_pmm_server_address }}" }
   - { database: labapp, user: labapp, address: "{{ postgresql_pmm_server_address }}" }
-  - { database: shop, user: "shop_app,shop_reporting,shop_analytics,shop_batch,shop_migrator", address: "{{ postgresql_pmm_server_address }}" }
+  - { database: shop, user: "shop_app,shop_reporting,shop_analytics,shop_batch,shop_support,shop_migrator", address: "{{ postgresql_pmm_server_address }}" }
   - { database: all, user: dba, address: "{{ postgresql_pmm_server_address }}" }

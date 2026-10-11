@@ -3,7 +3,7 @@
 labapp_dir: /opt/labapp
 labapp_user: labapp
 labapp_source_dir: "{{ role_path }}/../../../tools/labapp"
-labapp_files: [labapp.py, common.py, workload.py]
+labapp_files: [labapp.py, common.py, workload.py, scenarios.py]
 labapp_python_packages:
   - psycopg[binary]>=3.2
   - prometheus_client>=0.20
@@ -37,6 +37,7 @@ labapp_workload_metrics_port: 9302
 labapp_workload_control_port: 9301 # 127.0.0.1 only, used by `labapp load`
 
 # One connection string per role, set by the lab (group_vars): app, reporting, analytics, batch.
+# The scenarios also need: support, migrator.
 labapp_workload_dsn: {}
 
 # Transaction mix (weights); empty = the defaults in tools/labapp/workload.py.
@@ -52,6 +53,11 @@ labapp_workload_jobs:
   cart_cleanup: { every: 600, first: 300 } # bulk UPDATE + DELETE, shop_batch
   restock: { every: 900, first: 450 } # shop_batch
   stock_recount: { every: 1200, first: 600, target: 90, mode: single_transaction } # or: batched
+
+# Scenarios: incidents on demand (labapp scenario run NAME). Each ends by itself after `seconds`.
+labapp_workload_scenarios:
+  forgotten_transaction: { seconds: 600, customers: 50000 } # rows of the most active customers it locks
+  migration_behind_report: { seconds: 300 }
 
 ##################################################################
 # PMM server on this host
