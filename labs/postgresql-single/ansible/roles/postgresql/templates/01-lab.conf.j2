@@ -79,14 +79,21 @@ log_min_duration_statement = 500ms      # slow statements
 log_checkpoints = on
 log_lock_waits = on                     # waits longer than deadlock_timeout (1 s)
 log_temp_files = 0                      # every query that spills to disk
-log_statement = 'ddl'                   # every schema change, e.g. migrations
+log_statement = 'none'                  # pgAudit logs the schema changes instead (below), without passwords
 track_io_timing = on                    # I/O time in EXPLAIN (ANALYZE, BUFFERS), statistics views, PMM
 track_wal_io_timing = on
 
 #------------------------------------------------------------------------------
+# Audit (pgAudit): who changed what, as lines starting with "AUDIT:" in the server log
+#------------------------------------------------------------------------------
+# For every user. ddl: CREATE, ALTER, DROP of any object. role: GRANT, REVOKE, CREATE / ALTER / DROP ROLE.
+# Not logged: SELECT, INSERT, UPDATE, DELETE, and TRUNCATE (pgAudit classes it as a write).
+pgaudit.log = '{{ postgresql_audit_log }}'
+
+#------------------------------------------------------------------------------
 # Extensions
 #------------------------------------------------------------------------------
-shared_preload_libraries = 'pg_stat_monitor'
+shared_preload_libraries = 'pg_stat_monitor, pgaudit'
 pg_stat_monitor.pgsm_query_max_len = 2048
 pg_stat_monitor.pgsm_normalized_query = on
 pg_stat_monitor.pgsm_enable_query_plan = off    # on adds query plans to PMM QAN, with some overhead

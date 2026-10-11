@@ -10,6 +10,7 @@ postgresql_packages:
   - percona-pgbackrest
   - percona-pg_repack{{ postgresql_version }}
   - percona-pg_stat_monitor{{ postgresql_version }}
+  - percona-pgaudit{{ postgresql_version }}
   - python3-psycopg2 # used by the community.postgresql modules
 
 # Options for initdb (only when the cluster is created): checksums detect pages damaged by storage.
@@ -27,6 +28,11 @@ postgresql_maintenance_work_mem_mb: "{{ [64, [1024, (postgresql_memory_mb | int 
 # Global lock wait limit for every session, DBAs included (per-role settings override it, e.g. shop_app 2s):
 # a session waiting longer for a lock gives up instead of queueing, so sessions don't pile up behind it.
 postgresql_lock_timeout: 5s
+
+# Audit with pgAudit: the statement classes logged for every user, as "AUDIT:" lines in the server log.
+#   ddl: CREATE, ALTER, DROP of any object.   role: GRANT, REVOKE, CREATE / ALTER / DROP ROLE.
+# Other classes: read, write (INSERT, UPDATE, DELETE, TRUNCATE), function, misc, misc_set, all. none = off.
+postgresql_audit_log: ddl, role
 
 # Extra settings written at the end of conf.d/01-lab.conf (they win over everything above). Example:
 #   postgresql_settings_extra: { jit: false, log_min_duration_statement: 100ms }

@@ -13,7 +13,7 @@
   args:
     creates: "{{ postgresql_bin_dir }}/postgres"
 
-- name: Install PostgreSQL, pgBackRest, pg_repack and pg_stat_monitor
+- name: Install PostgreSQL, pgBackRest, pg_repack, pg_stat_monitor and pgAudit
   ansible.builtin.dnf:
     name: "{{ postgresql_packages }}"
     state: present
@@ -84,6 +84,23 @@
   become: true
   become_user: postgres
 
+# pgAudit logs through the server (shared_preload_libraries) in every database. Its extension is per database:
+# it adds the event triggers that give each DDL audit line the type and name of the object changed. Without
+# it, DDL in that database is still logged, but without them.
+# template1 is on the list because PostgreSQL creates every new database as a copy of template1: a database
+# added later gets the extension by itself, without anyone having to remember it.
+# pgAudit refuses to create its extension while pgaudit.log is set, so these sessions start with it off.
+- name: Create the pgaudit extension in postgres and template1
+  community.postgresql.postgresql_ext:
+    name: pgaudit
+    schema: public
+    login_db: "{{ item }}"
+  loop: [postgres, template1]
+  environment:
+    PGOPTIONS: "-c pgaudit.log=none"
+  become: true
+  become_user: postgres
+
 - name: Create the PMM monitoring user (no superuser)
   community.postgresql.postgresql_user:
     name: "{{ postgresql_monitoring_user }}"
@@ -133,6 +150,20 @@
   loop: "{{ postgresql_app_databases }}"
   loop_control:
     label: "{{ item.name }}"
+  become: true
+  become_user: postgres
+
+# For databases that existed before the extension was added to template1.
+- name: Create the pgaudit extension in the application databases
+  community.postgresql.postgresql_ext:
+    name: pgaudit
+    schema: public
+    login_db: "{{ item.name }}"
+  loop: "{{ postgresql_app_databases }}"
+  loop_control:
+    label: "{{ item.name }}"
+  environment:
+    PGOPTIONS: "-c pgaudit.log=none"
   become: true
   become_user: postgres
 

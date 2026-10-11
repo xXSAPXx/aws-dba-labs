@@ -5,7 +5,7 @@ A single Percona PostgreSQL 17 server in a private subnet, monitored by PMM 3. U
 ## What it deploys
 
 - **VPC** `10.0.0.0/24`: one public subnet, two private subnets in two availability zones, and a NAT gateway.
-- **postgresql-source**: Percona PostgreSQL 17 with pg_stat_monitor and data checksums, in private subnet 1. Its data lives on a separate encrypted gp3 volume (20 GB by default, mounted at `/var/lib/pgsql`). The configuration is sized from the server's RAM and CPUs (`conf.d/01-lab.conf`, every setting commented), and `pg_hba.conf` lets each user reach only its own database, only from the PMM server.
+- **postgresql-source**: Percona PostgreSQL 17 with pg_stat_monitor, pgAudit and data checksums, in private subnet 1. Its data lives on a separate encrypted gp3 volume (20 GB by default, mounted at `/var/lib/pgsql`). The configuration is sized from the server's RAM and CPUs (`conf.d/01-lab.conf`, every setting commented), and `pg_hba.conf` lets each user reach only its own database, only from the PMM server.
 - **pmm-server**: PMM 3 (Docker) in the public subnet, also the SSH jump host and the application side: the labapp probe and shop workload, and the load tools (psql, pgbench). SSH and the PMM UI accept connections only from your `admin_cidr`.
 
 Both servers run Rocky Linux 10 (the newest official image at deploy time): PostgreSQL on a t3.small, the PMM server on a t3.medium because it also generates the load. Change them with `postgresql_instance_type` and `pmm_instance_type` in `terraform.tfvars`; Rocky Linux 10 needs a current type such as t3 or m7i, not t2.
@@ -182,6 +182,33 @@ The lab adds the missing piece to PMM: the **Lab → PostgreSQL lock blocking** 
 It opens from the link at the top of **Lab: Application**. Look at it after you have tried an exercise yourself: it names the culprit.
 
 How to read it, and how to install the same in another PMM: [PostgreSQL lock blocking](../../ansible/roles/pmm_client/README.md). Switch it off with `pmm_client_lock_blocking_enabled: false`.
+
+## Audit: who changed what
+
+[pgAudit](https://github.com/pgaudit/pgaudit) writes every administrative change to the server log, for every user:
+
+| Logged | Not logged |
+|---|---|
+| All DDL: `CREATE`, `ALTER`, `DROP` of any object, also when run inside a function or a `DO` block | `SELECT`, `INSERT`, `UPDATE`, `DELETE`: the application's traffic never reaches the audit log |
+| Roles and privileges: `GRANT`, `REVOKE`, `CREATE` / `ALTER` / `DROP ROLE`, with passwords removed | `TRUNCATE`: pgAudit classes it as a write, with the three above |
+| | Killing a session, promoting a replica: these are `SELECT`s of built-in functions |
+
+The audit lines carry the usual prefix (time, process, user, database, application, client address) and then `AUDIT:`. Find them with:
+
+```bash
+ssh postgresql-source
+sudo grep 'AUDIT:' /var/lib/pgsql/17/data/log/postgresql-*.log | tail
+```
+
+```
+... shop_migrator@shop app=liquibase client=10.0.0.8 LOG:  AUDIT: SESSION,1,1,DDL,ALTER TABLE,TABLE,shop.orders,ALTER TABLE shop.orders ADD COLUMN channel text,<not logged>
+```
+
+A line has this form. After `AUDIT:` come: `SESSION`, the statement and sub-statement numbers, the class (`DDL` or `ROLE`), the command, the object's type and name, and the statement.
+
+- **The classes are one setting:** `postgresql_audit_log` (default `ddl, role`). pgAudit can also be set per user with `ALTER ROLE ... SET pgaudit.log`, for example `all` for the accounts that administer the database.
+- **`log_statement` is off,** because pgAudit replaces it. PostgreSQL's own DDL logging would write each change a second time, and a `CREATE USER ... PASSWORD '...'` in clear text.
+- **A superuser can switch the audit off,** so it is not proof against the people it audits unless the log also leaves the server.
 
 ## Break, fix, reset
 
