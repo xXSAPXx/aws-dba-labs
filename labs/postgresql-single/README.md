@@ -189,26 +189,27 @@ How to read it, and how to install the same in another PMM: [PostgreSQL lock blo
 
 | Logged | Not logged |
 |---|---|
-| All DDL: `CREATE`, `ALTER`, `DROP` of any object, also when run inside a function or a `DO` block | `SELECT`, `INSERT`, `UPDATE`, `DELETE`: the application's traffic never reaches the audit log |
-| Roles and privileges: `GRANT`, `REVOKE`, `CREATE` / `ALTER` / `DROP ROLE`, with passwords removed | `TRUNCATE`: pgAudit classes it as a write, with the three above |
-| | Killing a session, promoting a replica: these are `SELECT`s of built-in functions |
+| All DDL: `CREATE`, `ALTER`, `DROP` of any object, also when run inside a function or a `DO` block; `COMMENT`; `ALTER SYSTEM` | `SELECT`, `INSERT`, `UPDATE`, `DELETE`: the application's traffic never reaches the audit log |
+| Roles and privileges: `GRANT`, `REVOKE`, `CREATE` / `ALTER` / `DROP ROLE`, with the password shown as `<REDACTED>` | `TRUNCATE`: pgAudit classes it as a write, with the three above |
+| | Killing a session, promoting a replica: these are `SELECT`s of built-in functions. Also `VACUUM` |
 
 The audit lines carry the usual prefix (time, process, user, database, application, client address) and then `AUDIT:`. Find them with:
 
 ```bash
 ssh postgresql-source
-sudo grep 'AUDIT:' /var/lib/pgsql/17/data/log/postgresql-*.log | tail
+sudo sh -c 'grep AUDIT: /var/lib/pgsql/17/data/log/postgresql-*.log' | tail
 ```
 
 ```
-... shop_migrator@shop app=liquibase client=10.0.0.8 LOG:  AUDIT: SESSION,1,1,DDL,ALTER TABLE,TABLE,shop.orders,ALTER TABLE shop.orders ADD COLUMN channel text,<not logged>
+2026-10-11 16:09:24.495 UTC [16191] shop_migrator@shop app=liquibase client=10.0.0.13 LOG:  AUDIT: SESSION,1,1,DDL,ALTER TABLE,TABLE,shop.orders,ALTER TABLE shop.orders ADD COLUMN labapp_scenario_column integer,<not logged>
 ```
 
-A line has this form. After `AUDIT:` come: `SESSION`, the statement and sub-statement numbers, the class (`DDL` or `ROLE`), the command, the object's type and name, and the statement.
+The `grep` runs in a root shell because only `postgres` and root can read the log directory. A line looks like this one, from the lab. After `AUDIT:` come: `SESSION`, the statement and sub-statement numbers, the class (`DDL` or `ROLE`), the command, the object's type and name, and the statement.
 
 - **The classes are one setting:** `postgresql_audit_log` (default `ddl, role`). pgAudit can also be set per user with `ALTER ROLE ... SET pgaudit.log`, for example `all` for the accounts that administer the database.
 - **`log_statement` is off,** because pgAudit replaces it. PostgreSQL's own DDL logging would write each change a second time, and a `CREATE USER ... PASSWORD '...'` in clear text.
 - **A superuser can switch the audit off,** so it is not proof against the people it audits unless the log also leaves the server.
+- **A statement is logged when it runs.** A DDL statement that is cancelled while it still waits for its lock leaves no audit line.
 
 ## Break, fix, reset
 
