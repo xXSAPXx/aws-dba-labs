@@ -65,13 +65,24 @@
     mode: "0644"
   loop: "{{ common_dnf_options | dict2items }}"
 
+# The first downloads of a new server try again instead of failing. A new NAT gateway drops packets on and
+# off for its first minutes, also after one connection got through: a server behind it reached the internet,
+# and half a minute later this download timed out.
 - name: Install the EPEL repository
   ansible.builtin.dnf:
     name: https://dl.fedoraproject.org/pub/epel/epel-release-latest-{{ ansible_facts['distribution_major_version'] }}.noarch.rpm
     state: present
     disable_gpg_check: true # bootstrap package: it installs the EPEL signing key itself
+  register: common_epel_install
+  until: common_epel_install is success
+  retries: "{{ common_download_retries }}"
+  delay: "{{ common_download_delay }}"
 
 - name: Install admin tools
   ansible.builtin.dnf:
     name: "{{ common_packages }}"
     state: present
+  register: common_packages_install
+  until: common_packages_install is success
+  retries: "{{ common_download_retries }}"
+  delay: "{{ common_download_delay }}"

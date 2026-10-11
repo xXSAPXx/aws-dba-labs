@@ -5,3 +5,8 @@
     name: https://repo.percona.com/yum/percona-release-latest.noarch.rpm
     state: present
     disable_gpg_check: true # bootstrap package: it installs the Percona signing keys itself
+  # Tries again instead of failing: on a new lab, the NAT gateway may still drop packets at this point.
+  register: percona_release_install
+  until: percona_release_install is success
+  retries: 10
+  delay: 15

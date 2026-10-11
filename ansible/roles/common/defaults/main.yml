@@ -7,6 +7,11 @@ common_dnf_options:
   minrate: 250k
   timeout: 10
 
+# The first downloads of a new server (EPEL, the admin tools) try again this often, this many seconds apart,
+# before the playbook gives up. A new NAT gateway drops packets on and off for about three minutes.
+common_download_retries: 10
+common_download_delay: 15
+
 # Rocky Linux only: take packages from the official server (dl.rockylinux.org) instead of a mirror chosen at
 # random. Mirrors can be slow or days behind; the official server is neither. false keeps the mirror list.
 common_rocky_official_server: true
