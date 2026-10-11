@@ -86,7 +86,9 @@
 
 # pgAudit logs through the server (shared_preload_libraries) in every database. Its extension is per database:
 # it adds the event triggers that give each DDL audit line the type and name of the object changed. Without
-# it, DDL in that database is still logged, but without them. template1: databases created later inherit it.
+# it, DDL in that database is still logged, but without them.
+# template1 is on the list because PostgreSQL creates every new database as a copy of template1: a database
+# added later gets the extension by itself, without anyone having to remember it.
 # pgAudit refuses to create its extension while pgaudit.log is set, so these sessions start with it off.
 - name: Create the pgaudit extension in postgres and template1
   community.postgresql.postgresql_ext:
