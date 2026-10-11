@@ -12,7 +12,7 @@ Both servers run Rocky Linux 10 (the newest official image at deploy time): Post
 
 t3 instances are burstable: each may use 20% of its vCPUs continuously and more in bursts, paid for with CPU credits, and a new one starts with none. The lab runs them in `unlimited` mode, so they are never throttled and CPU above the 20% is billed instead. With `cpu_credits = "standard"` in `terraform.tfvars` the price is fixed, but a server without credits is throttled, which looks like a slow database or a slow application in PMM. For heavy load tests, use a non-burstable type for PostgreSQL such as `m7i.large`.
 
-**Cost:** about $0.12 per hour in us-east-1 while the lab runs (NAT gateway $0.045, t3.medium $0.042, t3.small $0.021, two public IPs $0.010, 40 GB of gp3 disks $0.004). CPU above the t3 baseline adds well under a cent per hour with the default workload, and at most $0.16 per hour if both servers run flat out. Always run `terraform destroy` when you're done.
+**Cost:** about $0.12 per hour in us-east-1 while the lab runs (NAT gateway $0.045, t3.medium $0.042, t3.small $0.021, two public IPs $0.010, 40 GB of gp3 disks $0.004). CPU above the t3 baseline adds about a cent per hour with the default workload, and at most $0.16 per hour if both servers run flat out. Always run `terraform destroy` when you're done.
 
 Terraform (`terraform/`) builds the infrastructure. Ansible (`ansible/`) installs and configures everything on the servers; [how the Ansible part works](../../ansible/README.md).
 
@@ -81,7 +81,7 @@ psql -h postgresql-source -U shop_reporting shop   # reports: read-only
 
 ## The shop workload
 
-From the end of the playbook, the [labapp workload](../../tools/labapp/README.md#the-workload) on the PMM server runs the shop's traffic against the `shop` database, like a production application: about 30 requests per second of browsing, carts, checkouts, payments and shipping, rising and falling in an hourly cycle, with a flash sale every 30 minutes. Long-running reports (30 s, 1 min and 5 min) and batch jobs (cart cleanup, restock, a stock recount that locks every stock row for 90 s) run on schedules that fit a 1–2 hour lab.
+From the end of the playbook, the [labapp workload](../../tools/labapp/README.md#the-workload) on the PMM server runs the shop's traffic against the `shop` database, like a production application: about 100 requests per second of browsing, carts, checkouts, payments and shipping, rising and falling in an hourly cycle, with a flash sale every 30 minutes. Long-running reports (30 s, 1 min and 5 min) and batch jobs (cart cleanup, restock, a stock recount that locks every stock row for 90 s) run on schedules that fit a 1–2 hour lab.
 
 Watch it on the **Lab → Lab: Application** dashboard in PMM: throughput against the target rate, response times, errors by kind (lock timeouts, cancels, deadlocks, connection errors), and when each report and batch job ran. Control it from the PMM server:
 

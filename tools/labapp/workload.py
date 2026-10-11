@@ -561,7 +561,7 @@ class Load:
         self.annotations = annotations
         self.stop = stop
         self.timeout = float(cfg.get("timeout", 2.0))
-        self.base_rate = float(cfg.get("rate", 30))
+        self.base_rate = float(cfg.get("rate", 100))
         self.paused = False
         self.flash_until = 0.0
         self.max_wait = float(cfg.get("max_wait", 30))

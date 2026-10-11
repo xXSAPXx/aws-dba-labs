@@ -31,7 +31,7 @@ labapp_metrics_host: "{{ private_ip }}"
 ##################################################################
 
 labapp_workload_enabled: true
-labapp_workload_rate: 30 # base requests per second (live: labapp load rate N)
+labapp_workload_rate: 100 # base requests per second (live: labapp load rate N)
 labapp_workload_workers: 24 # connections as shop_app
 labapp_workload_metrics_port: 9302
 labapp_workload_control_port: 9301 # 127.0.0.1 only, used by `labapp load`

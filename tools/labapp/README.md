@@ -32,7 +32,7 @@ The probe's own table, `labapp_probe` in the `labapp` database, holds one heartb
 
 The `labapp-workload` service plays the shop's users, reporting tools and batch jobs. It is **open loop**, like real users: requests arrive at the target rate whether or not the database keeps up. 24 workers, one connection each as `shop_app`, run them as business transactions. When the database slows down, requests queue for a free worker, and the response time includes that wait. A request that waited 30 s counts as `expired` (the user gave up); once 5,000 requests are waiting, new ones are `dropped`.
 
-**Target rate** = base rate (30 requests/s) × an hourly wave (±40%, a "day" every hour) × a flash sale (3× for 3 minutes, every 30 minutes).
+**Target rate** = base rate (100 requests/s) × an hourly wave (±40%, a "day" every hour) × a flash sale (3× for 3 minutes, every 30 minutes). Over an hour that is 60 to 140 requests per second, and up to about 400 in a flash sale.
 
 ### Transactions
 
@@ -99,6 +99,21 @@ The cycles fit a 1–2 hour lab. Minutes after the service starts (it starts at 
 | Flash sale (3 min) | 20 | 30 min |
 
 The flash sales, `bi_extract`, `cart_cleanup` and `stock_recount` are marked in purple on the dashboard.
+
+### What the default load does
+
+Measured on the lab (t3.small database server) at the default 100 requests per second:
+
+| When | What the application sees |
+|---|---|
+| Normal traffic | No errors, checkout p95 about 25 ms, database CPU about 25% |
+| Flash sale alone | 200 to 400 requests per second, nothing queued, database CPU 40 to 70% |
+| Stock recount alone | No checkout succeeds for 90 s; about 8 per second fail with `lock_timeout`. Everything else keeps running, nothing queues |
+| Minute 50 of every hour: a flash sale and a stock recount start together | The pile-up. Checkouts waiting for the recount's locks tie up almost every worker, the queue fills to its limit of 5,000 within 75 s, requests are dropped, and the p95 of every transaction reaches about 26 s |
+
+The pile-up is the incident to study: the database is under 30% CPU while it happens, so more CPU fixes nothing. Under a flash sale the recount can also lose a deadlock against the checkouts and fail after a few seconds; then there is no pile-up that time.
+
+At `labapp load rate 30` none of this queues: too few checkouts arrive to tie up the workers.
 
 ## Scenarios: incidents on demand
 
@@ -176,7 +191,7 @@ The role's defaults (`ansible/roles/labapp/defaults/main.yml`), overridable in t
 | Variable | Default | |
 |---|---|---|
 | `labapp_workload_enabled` | `true` | `false` runs only the probe |
-| `labapp_workload_rate` | `30` | Base requests per second |
+| `labapp_workload_rate` | `100` | Base requests per second |
 | `labapp_workload_workers` | `24` | Connections as `shop_app` |
 | `labapp_workload_mix` | the shares above | Transaction weights, e.g. `{product_page: 50, checkout: 20, ...}` |
 | `labapp_workload_wave` | `{period: 3600, amplitude: 0.4}` | The traffic cycle |
