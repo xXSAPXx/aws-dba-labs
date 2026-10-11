@@ -2,9 +2,9 @@
 # Run the tools as the postgres OS user (socket login, full access to process statistics and to the log):
 #   sudo -iu postgres pg_activity
 #   sudo -iu postgres pg_top
-#   sudo -iu postgres pgbadger ...   (the full command: the lab README)
+#   sudo -iu postgres pgbadger ...   (the full command: the lab README). It only reads the server log.
 
-- name: Install pg_top and the Perl module pgBadger needs
+- name: Install pg_top and pgBadger
   ansible.builtin.dnf:
     name: "{{ postgresql_tools_packages }}"
     state: present
@@ -36,13 +36,3 @@
     src: "{{ postgresql_tools_pg_activity_venv }}/bin/pg_activity"
     dest: /usr/local/bin/pg_activity
     state: link
-
-# Reads only the server log, so it costs the database nothing. The version is pinned and its checksum verified.
-- name: Install pgBadger
-  ansible.builtin.get_url:
-    url: "{{ postgresql_tools_pgbadger_url }}"
-    dest: /usr/local/bin/pgbadger
-    checksum: "{{ postgresql_tools_pgbadger_checksum }}"
-    owner: root
-    group: root
-    mode: "0755"
