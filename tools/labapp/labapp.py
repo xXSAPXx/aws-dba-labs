@@ -8,6 +8,8 @@ Commands:
   labapp workload --config FILE       Run the shop workload (the labapp-workload service), see workload.py.
   labapp load status | rate N | pause | resume | flash-sale [SECONDS] | run JOB
                                       Control the running workload.
+  labapp scenario list | run NAME [--seconds N] | status | stop [NAME]
+                                      Incidents on demand for DBA drills, see scenarios.py.
 
 The probe checks every target from the application's side:
   write    On a persistent connection, a heartbeat row is written every `interval` seconds.
@@ -306,6 +308,47 @@ def cmd_load(args):
         sys.exit(f"The workload is not reachable at {args.url} ({exc}). Is labapp-workload running?")
 
 
+def cmd_scenario(args):
+    """List the scenarios, or start, show and stop them in the running workload (local only)."""
+    from scenarios import SCENARIOS, describe, minutes
+
+    if args.action == "list":
+        print("\n\n".join(describe(name) for name in SCENARIOS))
+        print("\nStart one with: labapp scenario run NAME   (it says again what it switches off)")
+        return
+    if args.action == "run" and args.name not in SCENARIOS:
+        sys.exit(f"labapp scenario run needs one of: {', '.join(SCENARIOS)}")
+    if args.action == "stop" and args.name not in (None, *SCENARIOS):
+        sys.exit(f"Unknown scenario {args.name}. Scenarios: {', '.join(SCENARIOS)}")
+    method, path = {
+        "run": ("POST", f"/scenario/run/{args.name}" + (f"/{args.seconds}" if args.seconds else "")),
+        "status": ("GET", "/scenarios"),
+        "stop": ("POST", "/scenario/stop" + (f"/{args.name}" if args.name else "")),
+    }[args.action]
+    try:
+        with urllib.request.urlopen(urllib.request.Request(args.url + path, method=method), timeout=5) as response:
+            reply = json.load(response)
+    except urllib.error.HTTPError as exc:
+        sys.exit(f"{exc.code}: {exc.read().decode().strip()}")
+    except OSError as exc:
+        sys.exit(f"The workload is not reachable at {args.url} ({exc}). Is labapp-workload running?")
+
+    if args.action == "run":
+        left = reply["ends_by_itself_in_seconds"]
+        print(describe(args.name, left))
+        print(f"\nStarted. It ends by itself in {minutes(left)}. To end it now: labapp scenario stop {args.name}")
+        return
+    if args.action == "stop":
+        print("Stopping: " + (", ".join(reply["stopping"]) or "nothing was running"))
+    running = reply["running"] if args.action == "status" else []
+    for run in running:
+        print(f"{run['scenario']}: running for {run['running_for_seconds']} s, "
+              f"ends by itself in {run['ends_by_itself_in_seconds']} s")
+        print(f"  Switches off:  {run['switches_off']}")
+    if args.action == "status" and not running:
+        print("No scenario is running. See: labapp scenario list")
+
+
 def main():
     parser = argparse.ArgumentParser(prog="labapp", description="The lab's simulated application.")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -330,6 +373,13 @@ def main():
     load.add_argument("value", nargs="?", help="rate: requests per second; flash-sale: seconds; run: job name")
     load.add_argument("--url", default=DEFAULT_CONTROL_URL, help=f"control endpoint (default: {DEFAULT_CONTROL_URL})")
     load.set_defaults(func=cmd_load)
+
+    scenario = sub.add_parser("scenario", help="incidents on demand, for DBA drills")
+    scenario.add_argument("action", choices=["list", "run", "status", "stop"])
+    scenario.add_argument("name", nargs="?", help="scenario name, see: labapp scenario list")
+    scenario.add_argument("--seconds", type=int, help="run: end by itself after this many seconds")
+    scenario.add_argument("--url", default=DEFAULT_CONTROL_URL, help=f"control endpoint (default: {DEFAULT_CONTROL_URL})")
+    scenario.set_defaults(func=cmd_scenario)
 
     args = parser.parse_args()
     logging.basicConfig(

@@ -97,6 +97,15 @@ labapp load resume
 
 Every change you make to the shop database, from a migration to a restart or a killed session, shows up there as the application sees it.
 
+For a drill, start an incident yourself. A [scenario](../../tools/labapp/README.md#scenarios-incidents-on-demand) plays a person or a tool making a production mistake, says which protection it switches off, and ends by itself:
+
+```bash
+labapp scenario list                          # what each one does and what it switches off
+labapp scenario run forgotten-transaction     # a support engineer leaves a transaction open
+labapp scenario run migration-behind-report   # an ALTER TABLE waits behind a long report, with SET lock_timeout = 0
+labapp scenario stop                          # end them now
+```
+
 ## More load: pgbench
 
 The PMM server acts as the application: it sends load to PostgreSQL over the network, like an application server would. `psql` and `pgbench` are installed there, and the `bench` user's password is in `~/.pgpass` (for `rocky` and `root`) for every PostgreSQL server of the lab, so you only name the server:

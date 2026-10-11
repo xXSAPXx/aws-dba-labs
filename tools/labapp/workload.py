@@ -6,7 +6,8 @@ each, as shop_app) run them as business transactions. Long-running reports and b
 schedules with their own roles (shop_reporting, shop_analytics, shop_batch).
 
 Target rate = base rate x daily wave (one cycle per `wave.period`) x flash sale multiplier (0 while paused).
-Control it live with `labapp load ...` (a local HTTP endpoint, 127.0.0.1 only).
+Control it live with `labapp load ...` (a local HTTP endpoint, 127.0.0.1 only). Incidents on demand, for
+DBA drills, are in scenarios.py (`labapp scenario ...`).
 """
 
 import json
@@ -21,6 +22,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from psycopg.types.json import Jsonb
 
 from common import LOG, Annotations, connect, short_error
+from scenarios import SCENARIOS, Scenarios
 
 # Response time buckets (seconds): 5 ms .. 30 s.
 LATENCY_BUCKETS = (0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0)
@@ -79,6 +81,7 @@ class Metrics:
         self.job_active = Gauge("labapp_job_active", "1 while a long-running report or batch job runs", ["job_name"])
         self.job_runs = Counter("labapp_job_runs", "Report and batch job runs by result", ["job_name", "result"])
         self.job_duration = Gauge("labapp_job_last_duration_seconds", "Duration of the last run", ["job_name"])
+        self.scenario_active = Gauge("labapp_scenario_active", "1 while a scenario (labapp scenario run) runs", ["scenario"])
 
 
 # ---- shop data -----------------------------------------------------------------------------------
@@ -684,7 +687,7 @@ class Load:
 # ---- control endpoint (127.0.0.1 only) ------------------------------------------------------------
 
 
-def control_server(load, port):
+def control_server(load, scenarios, port):
     class Handler(BaseHTTPRequestHandler):
         def _reply(self, code, body):
             data = json.dumps(body).encode()
@@ -696,12 +699,24 @@ def control_server(load, port):
 
         def do_GET(self):  # noqa: N802
             if self.path == "/status":
-                self._reply(200, load.status())
+                self._reply(200, {**load.status(), "running_scenarios": [s["scenario"] for s in scenarios.status()]})
+            elif self.path == "/scenarios":
+                self._reply(200, {"running": scenarios.status(), "scenarios": sorted(SCENARIOS)})
             else:
                 self._reply(404, {"error": "unknown path"})
 
+        def _scenario(self, action, name, seconds):
+            if action == "run" and name:
+                return self._reply(*scenarios.start(name, int(seconds) if seconds else None))
+            if action == "stop":
+                return self._reply(200, {"stopping": scenarios.stop(name), "running": scenarios.status()})
+            return self._reply(400, {"error": "use: scenario/run/NAME[/SECONDS] | scenario/stop[/NAME]",
+                                     "scenarios": sorted(SCENARIOS)})
+
         def do_POST(self):  # noqa: N802
             parts = [p for p in self.path.split("/") if p]
+            if parts[:1] == ["scenario"]:
+                return self._scenario(*(parts[1:] + [None, None, None])[:3])
             action, value = (parts + [None, None])[:2]
             if action == "rate" and value:
                 load.base_rate = max(0.0, float(value))
@@ -718,7 +733,7 @@ def control_server(load, port):
             else:
                 return self._reply(400, {"error": "use: rate N | pause | resume | flash-sale [SECONDS] | run JOB",
                                          "jobs": sorted(load.jobs.run_fn)})
-            self._reply(200, load.status())
+            self._reply(200, {**load.status(), "running_scenarios": [s["scenario"] for s in scenarios.status()]})
 
         def log_message(self, *args):
             pass
@@ -753,7 +768,8 @@ def run(cfg, stop):
 
     jobs = Jobs(cfg, shop, metrics, annotations, stop)
     load = Load(cfg, shop, metrics, jobs, annotations, stop)
-    control_server(load, int(cfg.get("control_port", 9301)))
+    scenarios = Scenarios(cfg, shop, jobs, metrics, annotations, stop)
+    control_server(load, scenarios, int(cfg.get("control_port", 9301)))
     workers = int(cfg.get("workers", 24))
     for i in range(workers):
         threading.Thread(target=load.worker, name=f"worker-{i}", daemon=True).start()

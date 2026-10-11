@@ -27,6 +27,9 @@ postgresql_client_pgpass:
   - hosts: "{{ groups['postgresql'] + (groups['postgresql'] | map('extract', hostvars, 'private_ip') | list) }}"
     user: shop_batch
     password: "{{ postgresql_shop_batch_password }}"
+  - hosts: "{{ groups['postgresql'] + (groups['postgresql'] | map('extract', hostvars, 'private_ip') | list) }}"
+    user: shop_support
+    password: "{{ postgresql_shop_support_password }}"
 
 # Liquibase: the shop schema migrations (schema/shop in the repo), applied as shop_migrator.
 liquibase_projects:
@@ -50,3 +53,6 @@ labapp_workload_dsn:
   reporting: "host={{ groups['postgresql'][0] }} dbname=shop user=shop_reporting password={{ postgresql_shop_reporting_password }}"
   analytics: "host={{ groups['postgresql'][0] }} dbname=shop user=shop_analytics password={{ postgresql_shop_analytics_password }}"
   batch: "host={{ groups['postgresql'][0] }} dbname=shop user=shop_batch password={{ postgresql_shop_batch_password }}"
+  # For the scenarios (labapp scenario ...): the people and tools whose mistakes they play.
+  support: "host={{ groups['postgresql'][0] }} dbname=shop user=shop_support password={{ postgresql_shop_support_password }}"
+  migrator: "host={{ groups['postgresql'][0] }} dbname=shop user=shop_migrator password={{ postgresql_shop_migrator_password }}"

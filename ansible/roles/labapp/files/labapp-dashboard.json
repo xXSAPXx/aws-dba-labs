@@ -34,7 +34,7 @@
         "datasource": { "type": "grafana", "uid": "-- Grafana --" },
         "enable": true,
         "iconColor": "purple",
-        "name": "Flash sales and batch jobs",
+        "name": "Flash sales, batch jobs and scenarios",
         "target": { "type": "tags", "tags": ["labapp", "workload"], "matchAny": false, "limit": 100 }
       }
     ]
@@ -357,10 +357,13 @@
       "id": 30,
       "type": "state-timeline",
       "title": "Running",
-      "description": "When the long-running reports (sales dashboard ~30 s, lifetime-value export ~1 min, BI extract ~5 min) and the batch jobs run.",
+      "description": "When the long-running reports (sales dashboard ~30 s, lifetime-value export ~1 min, BI extract ~5 min) and the batch jobs run, and when a scenario started with `labapp scenario run` was running.",
       "gridPos": { "x": 0, "y": 44, "w": 16, "h": 7 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
-      "targets": [ { "refId": "A", "expr": "max by (job_name) (labapp_job_active)", "legendFormat": "{{job_name}}" } ],
+      "targets": [
+        { "refId": "A", "expr": "max by (job_name) (labapp_job_active)", "legendFormat": "{{job_name}}" },
+        { "refId": "B", "expr": "max by (scenario) (labapp_scenario_active)", "legendFormat": "scenario: {{scenario}}" }
+      ],
       "fieldConfig": {
         "defaults": {
           "mappings": [ { "type": "value", "options": { "0": { "text": "idle", "color": "transparent", "index": 0 }, "1": { "text": "running", "color": "blue", "index": 1 } } } ],
