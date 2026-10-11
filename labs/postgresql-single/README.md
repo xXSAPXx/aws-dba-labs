@@ -103,6 +103,7 @@ For a drill, start an incident yourself. A [scenario](../../tools/labapp/README.
 labapp scenario list                          # what each one does and what it switches off
 labapp scenario run forgotten-transaction     # a support engineer leaves a transaction open
 labapp scenario run migration-behind-report   # an ALTER TABLE waits behind a long report, with SET lock_timeout = 0
+labapp scenario run dropped-table --confirm orders   # DROP TABLE shop.orders: it stays dropped
 labapp scenario stop                          # end them now
 ```
 
@@ -212,6 +213,22 @@ The `grep` runs in a root shell because only `postgres` and root can read the lo
 - **A statement is logged when it runs.** A DDL statement that is cancelled while it still waits for its lock leaves no audit line.
 - **A refused statement gets no audit line, but it is still in the log.** When a user lacks the permission (`must be owner`, `permission denied`), PostgreSQL itself logs the error and, on the next line, the full statement with the user, application and client address. That covers every refused command, `TRUNCATE` and `pg_terminate_backend()` included. Find them with `grep -B1 STATEMENT:` or by the error text.
 - **A failed `CREATE ROLE ... PASSWORD` puts the password in the log.** pgAudit hides passwords in its own lines, but the error line above carries the statement as it was typed. Set passwords with `\password` in psql, which sends only the hash.
+
+## Reset the shop database
+
+To get the shop back after something that can't be repaired, such as the `dropped-table` scenario while the lab has no backups, drop the database and let the playbook build it again. It generates new data, so order numbers and amounts differ from before.
+
+```bash
+ssh pmm-server
+sudo systemctl stop labapp-workload
+psql -h postgresql-source -U dba postgres -c 'DROP DATABASE shop WITH (FORCE)'
+exit
+
+cd labs/postgresql-single/ansible
+ansible-playbook site.yml        # creates the database, runs the migrations, generates the data, starts the workload
+```
+
+It takes about 6 minutes, most of it the data. The audit log keeps the `DROP DATABASE`, like every other schema change.
 
 ## Break, fix, reset
 

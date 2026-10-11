@@ -8,7 +8,7 @@ Commands:
   labapp workload --config FILE       Run the shop workload (the labapp-workload service), see workload.py.
   labapp load status | rate N | pause | resume | flash-sale [SECONDS] | run JOB
                                       Control the running workload.
-  labapp scenario list | run NAME [--seconds N] | status | stop [NAME]
+  labapp scenario list | run NAME [--seconds N] [--confirm TABLE] | status | stop [NAME]
                                       Incidents on demand for DBA drills, see scenarios.py.
 
 The probe checks every target from the application's side:
@@ -320,8 +320,13 @@ def cmd_scenario(args):
         sys.exit(f"labapp scenario run needs one of: {', '.join(SCENARIOS)}")
     if args.action == "stop" and args.name not in (None, *SCENARIOS):
         sys.exit(f"Unknown scenario {args.name}. Scenarios: {', '.join(SCENARIOS)}")
+    needs = SCENARIOS[args.name].get("confirm") if args.action == "run" else None
+    if needs and args.confirm != needs:  # a scenario that destroys data: show what it does, start nothing
+        print(describe(args.name, args.seconds))
+        sys.exit(f"\nNot started. This scenario destroys data. To run it: labapp scenario run {args.name} --confirm {needs}")
     method, path = {
-        "run": ("POST", f"/scenario/run/{args.name}" + (f"/{args.seconds}" if args.seconds else "")),
+        "run": ("POST", f"/scenario/run/{args.name}" + (f"/{args.seconds}" if args.seconds else "")
+                + (f"?confirm={args.confirm}" if needs else "")),
         "status": ("GET", "/scenarios"),
         "stop": ("POST", "/scenario/stop" + (f"/{args.name}" if args.name else "")),
     }[args.action]
@@ -336,7 +341,10 @@ def cmd_scenario(args):
     if args.action == "run":
         left = reply["ends_by_itself_in_seconds"]
         print(describe(args.name, left))
-        print(f"\nStarted. It ends by itself in {minutes(left)}. To end it now: labapp scenario stop {args.name}")
+        if needs:
+            print(f"\nStarted. It acts within {minutes(left)}. To call it off before it has acted: labapp scenario stop {args.name}")
+        else:
+            print(f"\nStarted. It ends by itself in {minutes(left)}. To end it now: labapp scenario stop {args.name}")
         return
     if args.action == "stop":
         print("Stopping: " + (", ".join(reply["stopping"]) or "nothing was running"))
@@ -345,6 +353,7 @@ def cmd_scenario(args):
         print(f"{run['scenario']}: running for {run['running_for_seconds']} s, "
               f"ends by itself in {run['ends_by_itself_in_seconds']} s")
         print(f"  Switches off:  {run['switches_off']}")
+        print(f"  Leaves behind: {run['leaves']}")
     if args.action == "status" and not running:
         print("No scenario is running. See: labapp scenario list")
 
@@ -378,6 +387,7 @@ def main():
     scenario.add_argument("action", choices=["list", "run", "status", "stop"])
     scenario.add_argument("name", nargs="?", help="scenario name, see: labapp scenario list")
     scenario.add_argument("--seconds", type=int, help="run: end by itself after this many seconds")
+    scenario.add_argument("--confirm", metavar="TABLE", help="run: required by a scenario that destroys data: the table it destroys")
     scenario.add_argument("--url", default=DEFAULT_CONTROL_URL, help=f"control endpoint (default: {DEFAULT_CONTROL_URL})")
     scenario.set_defaults(func=cmd_scenario)
 
