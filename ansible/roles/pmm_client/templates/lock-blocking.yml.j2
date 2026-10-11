@@ -125,16 +125,43 @@ pg_lock_blocking_statement:
         usage: "GAUGE"
         description: "Seconds the root blocker's transaction has been open"
 
-# Who waits: every session waiting on a lock right now, however briefly, by database, user and application.
+# Who waits: by database, user and application of the waiting sessions.
+#   sessions:         every session waiting on a lock right now, however briefly.
+#   blocked_sessions: of those, the ones behind a persisting root blocker.
+#
+# This is where the totals come from. The two queries above count per blocker, and a session that waits
+# behind several root blockers is counted under each of them: three reports holding a table that 21
+# sessions wait for gave 3 x 21. Here every waiting session is one row, so the numbers add up.
 pg_lock_waiting:
   master: true
   query: |
-    SELECT coalesce(datname, '') AS datname,
-           coalesce(usename, backend_type) AS waiting_user,
-           coalesce(nullif(application_name, ''), backend_type) AS waiting_application,
-           count(*) AS sessions
-    FROM pg_stat_activity
-    WHERE wait_event_type = 'Lock'
+    WITH RECURSIVE waiting AS (
+        SELECT a.pid, b.pid AS blocker_pid
+        FROM pg_stat_activity a
+        CROSS JOIN LATERAL unnest(pg_blocking_pids(a.pid)) AS b(pid)
+        WHERE a.wait_event_type = 'Lock'
+    ), chain AS (
+        SELECT DISTINCT w.blocker_pid AS root_pid, w.pid AS waiting_pid
+        FROM waiting w
+        WHERE w.blocker_pid NOT IN (SELECT pid FROM waiting)
+      UNION
+        SELECT c.root_pid, w.pid
+        FROM chain c
+        JOIN waiting w ON w.blocker_pid = c.waiting_pid
+    ), blocked AS (
+        SELECT DISTINCT c.waiting_pid
+        FROM chain c
+        JOIN pg_stat_activity r ON r.pid = c.root_pid
+        WHERE coalesce(r.xact_start, r.state_change) <= clock_timestamp() - make_interval(secs => {{ pmm_client_lock_blocking_min_seconds }})
+    )
+    SELECT coalesce(a.datname, '') AS datname,
+           coalesce(a.usename, a.backend_type) AS waiting_user,
+           coalesce(nullif(a.application_name, ''), a.backend_type) AS waiting_application,
+           count(*) AS sessions,
+           count(b.waiting_pid) AS blocked_sessions
+    FROM pg_stat_activity a
+    LEFT JOIN blocked b ON b.waiting_pid = a.pid
+    WHERE a.wait_event_type = 'Lock'
     GROUP BY 1, 2, 3
   metrics:
     - datname:
@@ -149,3 +176,6 @@ pg_lock_waiting:
     - sessions:
         usage: "GAUGE"
         description: "Sessions waiting on a lock"
+    - blocked_sessions:
+        usage: "GAUGE"
+        description: "Of the waiting sessions, those behind a persisting root blocker. Each is counted once."

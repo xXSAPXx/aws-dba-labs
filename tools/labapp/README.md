@@ -32,7 +32,7 @@ The probe's own table, `labapp_probe` in the `labapp` database, holds one heartb
 
 The `labapp-workload` service plays the shop's users, reporting tools and batch jobs. It is **open loop**, like real users: requests arrive at the target rate whether or not the database keeps up. 24 workers, one connection each as `shop_app`, run them as business transactions. When the database slows down, requests queue for a free worker, and the response time includes that wait. A request that waited 30 s counts as `expired` (the user gave up); once 5,000 requests are waiting, new ones are `dropped`.
 
-**Target rate** = base rate (30 requests/s) × an hourly wave (±40%, a "day" every hour) × a flash sale (3× for 3 minutes, every 30 minutes).
+**Target rate** = base rate (100 requests/s) × an hourly wave (±40%, a "day" every hour) × a flash sale (3× for 3 minutes, every 30 minutes). Over an hour that is 60 to 140 requests per second, and up to about 400 in a flash sale.
 
 ### Transactions
 
@@ -100,30 +100,57 @@ The cycles fit a 1–2 hour lab. Minutes after the service starts (it starts at 
 
 The flash sales, `bi_extract`, `cart_cleanup` and `stock_recount` are marked in purple on the dashboard.
 
+### What the default load does
+
+Measured on the lab (t3.small database server) at the default 100 requests per second:
+
+| When | What the application sees |
+|---|---|
+| Normal traffic | No errors, checkout p95 about 25 ms, database CPU about 25% |
+| Flash sale alone | 200 to 400 requests per second, nothing queued, database CPU 40 to 70% |
+| Stock recount alone | No checkout succeeds for 90 s; about 8 per second fail with `lock_timeout`. Everything else keeps running, nothing queues |
+| Minute 50 of every hour: a flash sale and a stock recount start together | The pile-up. Checkouts waiting for the recount's locks tie up almost every worker, the queue fills to its limit of 5,000 within 75 s, requests are dropped, and the p95 of every transaction reaches about 26 s |
+
+The pile-up is the incident to study: the database is under 30% CPU while it happens, so more CPU fixes nothing. Under a flash sale the recount can also lose a deadlock against the checkouts and fail after a few seconds; then there is no pile-up that time.
+
+At `labapp load rate 30` none of this queues: too few checkouts arrive to tie up the workers.
+
 ## Scenarios: incidents on demand
 
 A scenario plays a person or a tool doing something that goes wrong in production. You start it when you want a drill, find it with the dashboards and pg_activity, and fix it. Nothing starts one by schedule.
 
 ```bash
-labapp scenario list                          # every scenario: what it does and what it switches off
+labapp scenario list                          # every scenario: what it does, what it switches off, what it leaves behind
 labapp scenario run forgotten-transaction     # start one
 labapp scenario run migration-behind-report --seconds 120
+labapp scenario run dropped-table --confirm orders
 labapp scenario status                        # what is running, and when it ends by itself
 labapp scenario stop                          # end them now (or: stop NAME)
 ```
 
-| Scenario | Runs as | What happens | Switches off |
-|---|---|---|---|
-| `forgotten-transaction` | `shop_support`, from `psql` | Updates the 50,000 most active customers and never commits. The session sits idle in its transaction and keeps the row locks, so logins of those customers fail with `lock_timeout` | Nothing. `shop_support` has no `idle_in_transaction_session_timeout`, so nothing ends the transaction but you |
-| `migration-behind-report` | `shop_migrator`, from `liquibase`, behind a report of `shop_analytics` | An `ALTER TABLE shop.orders` waits for a long report to finish. Every statement on `orders` queues behind the waiting `ALTER`: checkouts, payments, shipping, order history | `SET lock_timeout = 0` in the migration's session. With `shop_migrator`'s own 5 s, the `ALTER` gives up and the application recovers by itself |
+| Scenario | Runs as | What happens | Switches off | Leaves behind |
+|---|---|---|---|---|
+| `forgotten-transaction` | `shop_support`, from `psql` | Updates the 50,000 most active customers and never commits. The session sits idle in its transaction and keeps the row locks, so logins of those customers fail with `lock_timeout` | Nothing. `shop_support` has no `idle_in_transaction_session_timeout`, so nothing ends the transaction but you | Nothing |
+| `migration-behind-report` | `shop_migrator`, from `liquibase`, behind a report of `shop_analytics` | An `ALTER TABLE shop.orders` waits for a long report to finish. Every statement on `orders` queues behind the waiting `ALTER`: checkouts, payments, shipping, order history | `SET lock_timeout = 0` in the migration's session. With `shop_migrator`'s own 5 s, the `ALTER` gives up and the application recovers by itself | Nothing |
+| `dropped-table` | `shop_migrator`, from `psql` | `DROP TABLE shop.orders CASCADE`, at a random moment within 4 minutes: a cleanup script meant for staging, run against production. The seven foreign keys other tables have to `orders` go with it. Checkouts, payments, shipping, order history and the reports fail | Nothing. Whoever acts as a table's owner may drop it; the only protection is a backup | **The table stays dropped** |
 
-- **Each scenario says which protection it switches off.** That is the staged mistake, not the lab's normal setup. It is shown by `list` and `run`, logged, and written into the dashboard annotation.
-- **Each ends by itself:** `forgotten-transaction` rolls back after 10 minutes, and `migration-behind-report` withdraws its `ALTER` after 5. `--seconds` changes that for one run.
-- **No change is kept.** Both end in a rollback: the schema never changes and no customer record is altered. The rolled-back update does leave dead rows in `customers` for autovacuum, like any rolled-back update.
-- **They end when you fix them.** Terminate the forgotten session, the migration or the report in PostgreSQL, and the scenario notices and finishes.
+- **Each scenario says which protection it switches off and what it leaves behind.** The first is the staged mistake, not the lab's normal setup. Both are shown by `list` and `run`, logged, and written into the dashboard annotation.
+- **The first two end by themselves and keep no change.** `forgotten-transaction` rolls back after 10 minutes, and `migration-behind-report` withdraws its `ALTER` after 5; `--seconds` changes that for one run. The rolled-back update does leave dead rows in `customers` for autovacuum, like any rolled-back update.
+- **They also end when you fix them.** Terminate the forgotten session, the migration or the report in PostgreSQL, and the scenario notices and finishes.
 - **On the dashboards:** a scenario shows on the "Running" timeline of **Lab: Application** and as a purple annotation. Who it blocks is on **PostgreSQL lock blocking**.
 
 A scenario needs traffic to hurt: with the workload paused, nobody waits behind it.
+
+### dropped-table destroys data
+
+It is the one scenario that does not undo itself, so it only starts with `--confirm orders`. Without that, it prints what it would do and starts nothing.
+
+- **When it drops the table is for you to find out.** The moment is random, and neither the log of the scenario nor its mark on the dashboards gives it away: the scenario stays "running" for its whole 10 minutes. The audit log has the `DROP TABLE` with its time, user, application and client address ([lab README](../../labs/postgresql-single/README.md#audit-who-changed-what)); the application's errors on **Lab: Application** show when it started to hurt.
+- **`labapp scenario stop` only helps before the drop.** Afterwards nothing brings the table back.
+- **The database stays up.** The probe keeps reporting UP, because it writes to its own database. Only the shop is broken.
+- **The way back is a restore to the moment before the drop.** The lab has no backups yet. Until it does, the only way back is to [rebuild the shop database](../../labs/postgresql-single/README.md#reset-the-shop-database), which takes about 8 minutes and generates new data.
+- **If a report holds the table,** the `DROP` gives up after `shop_migrator`'s `lock_timeout` of 5 s and tries again every 20 s. Each attempt holds up the statements on `orders` for those 5 seconds, so the application's lock timeouts come in short bursts. A report holds `orders` about half of the time, and the longest one (`bi_extract`) for 5 minutes: that is why the scenario runs for 10.
+- **That waiting `DROP` is your chance to stop it.** It shows in pg_activity and on **PostgreSQL lock blocking** (who waits: `shop_migrator`, `psql`). Cancel it or terminate its session, and the scenario ends with nothing dropped.
 
 ## Commands
 
@@ -176,7 +203,7 @@ The role's defaults (`ansible/roles/labapp/defaults/main.yml`), overridable in t
 | Variable | Default | |
 |---|---|---|
 | `labapp_workload_enabled` | `true` | `false` runs only the probe |
-| `labapp_workload_rate` | `30` | Base requests per second |
+| `labapp_workload_rate` | `100` | Base requests per second |
 | `labapp_workload_workers` | `24` | Connections as `shop_app` |
 | `labapp_workload_mix` | the shares above | Transaction weights, e.g. `{product_page: 50, checkout: 20, ...}` |
 | `labapp_workload_wave` | `{period: 3600, amplitude: 0.4}` | The traffic cycle |

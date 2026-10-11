@@ -14,7 +14,7 @@ admin_cidr                 = "203.0.113.10/32"
 # pmm_instance_type        = "t3.medium"
 
 # Optional: CPU credit mode of the t3 servers. Default "unlimited": never throttled, CPU above the t3 baseline
-# is billed (well under a cent per hour with the default workload). "standard": fixed price, but throttled.
+# is billed (about a cent per hour with the default workload). "standard": fixed price, but throttled.
 # cpu_credits              = "standard"
 
 # Optional: private key of that key pair, used in the generated SSH config (~/.ssh/aws-postgresql-lab.conf).

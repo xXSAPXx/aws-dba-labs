@@ -18,6 +18,7 @@ import threading
 import time
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import parse_qs, urlsplit
 
 from psycopg.types.json import Jsonb
 
@@ -561,7 +562,7 @@ class Load:
         self.annotations = annotations
         self.stop = stop
         self.timeout = float(cfg.get("timeout", 2.0))
-        self.base_rate = float(cfg.get("rate", 30))
+        self.base_rate = float(cfg.get("rate", 100))
         self.paused = False
         self.flash_until = 0.0
         self.max_wait = float(cfg.get("max_wait", 30))
@@ -705,18 +706,20 @@ def control_server(load, scenarios, port):
             else:
                 self._reply(404, {"error": "unknown path"})
 
-        def _scenario(self, action, name, seconds):
+        def _scenario(self, action, name, seconds, confirm):
             if action == "run" and name:
-                return self._reply(*scenarios.start(name, int(seconds) if seconds else None))
+                return self._reply(*scenarios.start(name, int(seconds) if seconds else None, confirm))
             if action == "stop":
                 return self._reply(200, {"stopping": scenarios.stop(name), "running": scenarios.status()})
             return self._reply(400, {"error": "use: scenario/run/NAME[/SECONDS] | scenario/stop[/NAME]",
                                      "scenarios": sorted(SCENARIOS)})
 
         def do_POST(self):  # noqa: N802
-            parts = [p for p in self.path.split("/") if p]
+            url = urlsplit(self.path)
+            parts = [p for p in url.path.split("/") if p]
             if parts[:1] == ["scenario"]:
-                return self._scenario(*(parts[1:] + [None, None, None])[:3])
+                confirm = parse_qs(url.query).get("confirm", [None])[0]  # for a scenario that destroys data
+                return self._scenario(*(parts[1:] + [None, None, None])[:3], confirm)
             action, value = (parts + [None, None])[:2]
             if action == "rate" and value:
                 load.base_rate = max(0.0, float(value))

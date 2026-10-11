@@ -1,15 +1,21 @@
 """labapp scenarios: incidents on demand, for DBA drills.
 
 A scenario plays a person or a tool doing something that goes wrong in production: a transaction left open,
-a migration started at the wrong moment. It runs inside the labapp-workload service, as the database user that
-person or tool would use, ends by itself after its time limit, and is marked on the PMM dashboards.
+a migration started at the wrong moment, a table dropped by mistake. It runs inside the labapp-workload
+service, as the database user that person or tool would use, ends by itself after its time limit, and is
+marked on the PMM dashboards.
 
-    labapp scenario list | run NAME [--seconds N] | status | stop [NAME]
+    labapp scenario list | run NAME [--seconds N] [--confirm TABLE] | status | stop [NAME]
 
-Every scenario states which protection it switches off (`switches_off`), so the staged mistake is never taken
-for the lab's normal setup. That text is shown by `list` and `run`, logged, and written into the annotation.
+Every scenario states which protection it switches off (`switches_off`) and what it leaves behind (`leaves`),
+so the staged mistake is never taken for the lab's normal setup. Both are shown by `list` and `run`, logged,
+and written into the annotation.
+
+A scenario that destroys data does not undo it. It only starts when it is confirmed with the name of the
+table it destroys (`confirm`).
 """
 
+import random
 import threading
 import time
 
@@ -104,6 +110,37 @@ def migration_behind_report(run):
     return result + "; the schema is unchanged"
 
 
+ACTS_WITHIN = 0.4  # dropped-table first tries in this part of its time limit
+
+
+def dropped_table(run):
+    """A cleanup script meant for staging is run against production."""
+    # The moment is random and is not logged or annotated: finding it is part of the drill. The scenario
+    # stays "running" for its whole time limit, so its end on the dashboards does not give the moment away.
+    # The first attempt falls in the first part of the time limit (ACTS_WITHIN). The rest is for trying again
+    # while a report holds the table: by default 6 minutes, more than the longest report takes (5 minutes).
+    retry = float(run.settings.get("retry_seconds", 20))
+    if run.wait(random.uniform(0, run.seconds * ACTS_WITHIN)):
+        return "stopped before it dropped anything"
+    conn = run.connect("migrator", "psql")
+    attempts = 0
+    while True:
+        attempts += 1
+        try:
+            conn.execute("DROP TABLE shop.orders CASCADE")
+            break
+        except Exception as exc:
+            if getattr(exc, "sqlstate", None) != "55P03":  # not a lock timeout: cancelled, session terminated, ...
+                return f"nothing was dropped: attempt {attempts} of the DROP was ended ({short_error(exc)})"
+            # A long transaction holds the table, and shop_migrator's lock_timeout ended the attempt.
+            if run.wait(retry):
+                return f"nothing was dropped: shop.orders was held by another transaction at all {attempts} attempts"
+    conn.close()
+    while not run.wait(5):
+        pass
+    return "shop.orders IS DROPPED and stays dropped. The way back is a restore, or rebuilding the shop database"
+
+
 SCENARIOS = {
     "forgotten-transaction": {
         "summary": "A support engineer updates customers in psql and leaves the transaction open.",
@@ -117,6 +154,7 @@ SCENARIOS = {
             "Nothing. shop_support has no idle_in_transaction_session_timeout, "
             "so nothing ends this transaction but you, or the scenario's time limit."
         ),
+        "leaves": "Nothing. The transaction is rolled back.",
         "seconds": 600,
         "connections": ["support"],
         "run": forgotten_transaction,
@@ -128,15 +166,38 @@ SCENARIOS = {
             "A BI extract reads shop.orders in one transaction and keeps running.",
             "ALTER TABLE shop.orders ADD COLUMN ... needs the table to itself, so it waits for the report.",
             "Every statement on shop.orders queues behind the waiting ALTER: checkouts, payments, shipping, order history.",
-            "The ALTER runs in a transaction that is rolled back: the schema never changes.",
         ],
         "switches_off": (
             "SET lock_timeout = 0 in the migration's session. shop_migrator's own lock_timeout is 5 s: "
             "with it, the ALTER gives up after 5 s and the application recovers by itself."
         ),
+        "leaves": "Nothing. The ALTER runs in a transaction that is rolled back: the schema never changes.",
         "seconds": 300,
         "connections": ["analytics", "migrator"],
         "run": migration_behind_report,
+    },
+    "dropped-table": {
+        "summary": "A cleanup script meant for staging is run against production: DROP TABLE shop.orders CASCADE.",
+        "runs_as": "shop_migrator, application psql",
+        "does": [
+            "At a random moment: DROP TABLE shop.orders CASCADE. When exactly is for you to find out.",
+            "CASCADE also removes the foreign keys that seven other tables have to orders.",
+            "Checkouts, payments, shipping, order history and the reports fail: the table does not exist.",
+            "If a report holds the table, the DROP gives up after shop_migrator's lock_timeout of 5 s and tries again "
+            "every 20 s until the time limit. Each attempt holds up the statements on orders for those 5 s.",
+            "Cancel the DROP or terminate its session while it waits, and nothing is dropped.",
+        ],
+        "switches_off": "Nothing. Whoever acts as the owner of a table may drop it. The only protection is a backup.",
+        "leaves": (
+            "THE TABLE STAYS DROPPED. Neither the time limit nor `labapp scenario stop` brings it back. "
+            "The way back is a restore. The lab has no backups yet: until it does, rebuild the shop database "
+            "(lab README, \"Reset the shop database\", about 8 minutes)."
+        ),
+        "seconds": 600,
+        "acts_within": ACTS_WITHIN,
+        "connections": ["migrator"],
+        "confirm": "orders",  # the scenario only starts with: --confirm orders
+        "run": dropped_table,
     },
 }
 
@@ -148,13 +209,21 @@ def minutes(seconds):
 def describe(name, seconds=None):
     """What a scenario does, as text for the command line."""
     spec = SCENARIOS[name]
+    seconds = seconds or spec["seconds"]
+    limit = minutes(seconds)
+    header = f"ends by itself after {limit}"
+    if "acts_within" in spec:
+        header = f"acts at a random moment within {minutes(round(seconds * spec['acts_within']))}, ends after {limit}"
     lines = [
-        f"{name}  (ends by itself after {minutes(seconds or spec['seconds'])})",
+        f"{name}  ({header})",
         f"  {spec['summary']}",
         f"  Runs as:       {spec['runs_as']}",
     ]
     lines += [f"  {'What happens:' if i == 0 else '':<14} - {step}" for i, step in enumerate(spec["does"])]
     lines.append(f"  Switches off:  {spec['switches_off']}")
+    lines.append(f"  Leaves behind: {spec['leaves']}")
+    if spec.get("confirm"):
+        lines.append(f"  To run it:     labapp scenario run {name} --confirm {spec['confirm']}")
     return "\n".join(lines)
 
 
@@ -205,11 +274,14 @@ class Scenarios:
         for name in SCENARIOS:
             metrics.scenario_active.labels(name).set(0)
 
-    def start(self, name, seconds=None):
+    def start(self, name, seconds=None, confirm=None):
         """Start a scenario in its own thread. Returns (HTTP status, body)."""
         spec = SCENARIOS.get(name)
         if spec is None:
             return 404, {"error": f"unknown scenario {name}", "scenarios": sorted(SCENARIOS)}
+        if spec.get("confirm") and confirm != spec["confirm"]:
+            return 409, {"error": f"{name} destroys data and does not undo it. "
+                                  f"To run it: labapp scenario run {name} --confirm {spec['confirm']}"}
         missing = [role for role in spec["connections"] if role not in self.dsn]
         if missing:
             return 409, {"error": f"{name} needs a connection for {', '.join(missing)} in the workload configuration (dsn)"}
@@ -236,19 +308,21 @@ class Scenarios:
 
     @staticmethod
     def _state(run):
+        spec = SCENARIOS[run.name]
         return {
             "scenario": run.name,
             "running_for_seconds": round(run.age()),
             "ends_by_itself_in_seconds": max(0, round(run.ends - time.time())),
-            "switches_off": SCENARIOS[run.name]["switches_off"],
+            "switches_off": spec["switches_off"],
+            "leaves": spec["leaves"],
         }
 
     def _run(self, run):
         spec = SCENARIOS[run.name]
         tags = ["labapp", "workload", "scenario", run.name]
         self.metrics.scenario_active.labels(run.name).set(1)
-        LOG.info("scenario %s started, ends by itself after %d s. Switches off: %s",
-                 run.name, run.seconds, spec["switches_off"])
+        LOG.info("scenario %s started, ends by itself after %d s. Switches off: %s Leaves behind: %s",
+                 run.name, run.seconds, spec["switches_off"], spec["leaves"])
         if self.annotations:
             self.annotations.add((run.name, run.started), run.started,
                                  f"Scenario {run.name} started. Switches off: {spec['switches_off']}", tags)

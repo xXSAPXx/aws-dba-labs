@@ -40,7 +40,7 @@ variable "pmm_instance_type" {
 }
 
 # A t3 may use 20% of each vCPU continuously and more in bursts, paid for with CPU credits. It starts with none.
-#   unlimited: never throttled. CPU above the 20% is billed at $0.05 per vCPU-hour: well under a cent per hour
+#   unlimited: never throttled. CPU above the 20% is billed at $0.05 per vCPU-hour: about a cent per hour
 #              with the default workload, at most $0.08 per hour for a server that runs flat out.
 #   standard:  fixed price. A server without credits is throttled to the 20%, which shows up in PMM as a slow
 #              database or a slow application.

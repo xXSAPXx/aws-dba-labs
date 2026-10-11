@@ -19,6 +19,7 @@ Every 5 seconds (PMM's high resolution) the exporter samples `pg_stat_activity` 
 - **Persisting blockers only.** A root blocker is reported once its transaction has been open for 1 second. A healthy database has many lock waits of a few milliseconds: 20 clients updating one row at 407 transactions per second showed a "blocker" in 28 of 30 unfiltered samples, and in none with the filter.
 - **The filter is on the blocker, not on the waiting sessions.** A session that gives up after its `lock_timeout` never waits long. With a 2 s timeout, counting only sessions that had waited over 1 s gave between 0 and 12 for a blocker that held 12 sessions up the whole time.
 - **Once per server.** The exporter runs a custom query in every database unless it is marked `master: true`. These queries cover the whole server, so they are marked.
+- **Totals come from the waiting side.** A session that waits behind several root blockers is counted under each of them: three reports holding a table that 21 sessions waited for gave 3 × 21. Per blocker that is right, but the blockers must not be added up. The waiting metrics have one entry per waiting session, so they do add up, and the dashboard takes its totals from them.
 
 ## Metrics
 
@@ -30,8 +31,9 @@ Every 5 seconds (PMM's high resolution) the exporter samples `pg_stat_activity` 
 | `pg_lock_blocking_statement_sessions` | the same, plus `blocking_query` | The same count per statement of the root blocker, for the ten that block the most |
 | `pg_lock_blocking_statement_transaction_seconds` | the same, plus `blocking_query` | How long that blocker's transaction has been open |
 | `pg_lock_waiting_sessions` | `datname`, `waiting_user`, `waiting_application` | Every session waiting on a lock, however briefly |
+| `pg_lock_waiting_blocked_sessions` | same | Of those, the sessions behind a persisting root blocker. Each is counted once: sum this for a total |
 
-The first three have few, stable series: use them for graphs. The statement metrics carry the statement text (first 100 characters) as a label.
+The first three and the last two have few, stable series: use them for graphs. The statement metrics carry the statement text (first 100 characters) as a label.
 
 ## The dashboard
 
@@ -40,10 +42,11 @@ The first three have few, stable series: use them for graphs. The statement metr
 | **Now** | Sessions waiting, sessions blocked by a persisting blocker, blocking sessions, the oldest blocking transaction, and the blocked session-seconds of the time range |
 | **Who blocks** | Sessions blocked over time by blocking user and by application; blocked session-seconds by user; the age of each user's oldest blocking transaction |
 | **What they run** | The blocking statements, with the most sessions each blocked, its blocked session-seconds and how long its transaction was open |
-| **Who waits** | Sessions waiting over time, by waiting user and by application |
+| **Who waits** | Sessions held up by persisting blockers over time, by waiting user and by application, against every session waiting |
 | **PostgreSQL's own counters** | PMM's standard metrics: locks held by mode, deadlocks |
 
 - **Blocked session-seconds** is sessions blocked × seconds: the waiting a user or statement caused. 20 sessions blocked for 3 s and 5 sessions blocked for 12 s are both 60. It ranks blockers by impact rather than by peak.
+- **The per-blocker charts are not stacked,** and their lines can add up to more than the total: a session behind two blockers is in both lines. The two totals in the first row count each waiting session once, and cover all blockers whatever the **Blocking user** filter says.
 - **To see one user's statements,** click the user in a "by blocking user" panel and choose **Show only this user**, or pick it in the **Blocking user** filter. Every panel, including the statements table, then shows only that user.
 - **Sample interval** must equal PMM's high resolution (5 s by default). The session-seconds are the samples multiplied by it.
 
