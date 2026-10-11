@@ -3,6 +3,9 @@
 data_volume_mount_point: /var/lib/pgsql
 
 # PMM monitors PostgreSQL through pg_stat_monitor (installed by the postgresql role).
+# The monitoring user is set here, not left to the postgresql role's default, because the PMM registration
+# below runs in a play of its own (site.yml), where that role's defaults are not loaded.
+postgresql_monitoring_user: pmm
 pmm_client_services:
   - type: postgresql
     name: "{{ inventory_hostname }}"

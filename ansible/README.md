@@ -10,17 +10,27 @@ Each lab has one playbook, `labs/<lab>/ansible/site.yml`. It says which roles to
 - hosts: all                 # 1. every server
   roles: [common]
 
-- hosts: pmm_server          # 2. the PMM server
-  roles: [pmm_server]
+- hosts: all                 # 2. both servers at the same time, each with its own roles
+  strategy: free
+  roles:
+    - { role: pmm_server,        when: "'pmm_server' in group_names" }
+    - { role: postgresql_client, when: "'pmm_server' in group_names" }
+    - { role: data_volume,       when: "'postgresql' in group_names" }
+    - { role: postgresql,        when: "'postgresql' in group_names" }
+    - { role: postgresql_tools,  when: "'postgresql' in group_names" }
 
-- hosts: postgresql          # 3. the PostgreSQL server
-  roles: [data_volume, postgresql, postgresql_tools, pmm_client]
+- hosts: postgresql          # 3. the PostgreSQL server registers with PMM, which is now running
+  roles: [pmm_client]
 
-- hosts: pmm_server          # 4. the PMM server again, as the application side
-  roles: [postgresql_client, liquibase, labapp]
+- hosts: pmm_server          # 4. the PMM server as the application side, which needs the database
+  roles: [liquibase, labapp]
 ```
 
 A **role** is a folder of related steps, like one chapter of a runbook. Ansible connects to each server over SSH and runs the steps from top to bottom.
+
+Normally Ansible runs each step on every server of a play and waits for all of them before the next step. Step 2 switches that off with `strategy: free`: the two servers don't need each other for their own installation, so each works through its own roles without waiting for the other. Steps 3 and 4 are separate because they need both servers to be ready.
+
+A variable that one play's role defines by default is not known in another play. A value that two plays need, such as the monitoring user's name, therefore belongs in the lab's `group_vars`.
 
 ## How Ansible finds the servers
 

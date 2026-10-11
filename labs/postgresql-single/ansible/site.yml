@@ -24,25 +24,36 @@
   roles:
     - common
 
-- name: PMM server
-  hosts: pmm_server
+# The two servers don't need each other for their own installation, so they install at the same time.
+# strategy "free": each server works through its own roles without waiting for the other one at every
+# step, which saves about two minutes on a new lab. The `when` picks each server's roles by its group.
+- name: Install the PMM server and the PostgreSQL server, at the same time
+  hosts: all
   become: true
+  strategy: ansible.builtin.free
   roles:
-    - pmm_server
+    - role: pmm_server
+      when: "'pmm_server' in group_names"
+    - role: postgresql_client # psql and pgbench on the PMM server, the application side
+      when: "'pmm_server' in group_names"
+    - role: data_volume # before PostgreSQL is installed: its files go to the data disk
+      when: "'postgresql' in group_names"
+    - role: postgresql
+      when: "'postgresql' in group_names"
+    - role: postgresql_tools
+      when: "'postgresql' in group_names"
 
-- name: PostgreSQL server
+# From here on the steps need both servers: PMM must be running before a server registers with it,
+# and PostgreSQL before the migrations and the application.
+- name: Register the PostgreSQL server with PMM
   hosts: postgresql
   become: true
   roles:
-    - data_volume # before PostgreSQL is installed: its files go to the data disk
-    - postgresql
-    - postgresql_tools
     - pmm_client
 
 - name: Application side (runs on the PMM server)
   hosts: pmm_server
   become: true
   roles:
-    - postgresql_client
     - liquibase # applies schema/shop migrations (and generates the data on the first run)
     - labapp
