@@ -210,6 +210,8 @@ The `grep` runs in a root shell because only `postgres` and root can read the lo
 - **`log_statement` is off,** because pgAudit replaces it. PostgreSQL's own DDL logging would write each change a second time, and a `CREATE USER ... PASSWORD '...'` in clear text.
 - **A superuser can switch the audit off,** so it is not proof against the people it audits unless the log also leaves the server.
 - **A statement is logged when it runs.** A DDL statement that is cancelled while it still waits for its lock leaves no audit line.
+- **A refused statement gets no audit line, but it is still in the log.** When a user lacks the permission (`must be owner`, `permission denied`), PostgreSQL itself logs the error and, on the next line, the full statement with the user, application and client address. That covers every refused command, `TRUNCATE` and `pg_terminate_backend()` included. Find them with `grep -B1 STATEMENT:` or by the error text.
+- **A failed `CREATE ROLE ... PASSWORD` puts the password in the log.** pgAudit hides passwords in its own lines, but the error line above carries the statement as it was typed. Set passwords with `password` in psql, which sends only the hash.
 
 ## Break, fix, reset
 
