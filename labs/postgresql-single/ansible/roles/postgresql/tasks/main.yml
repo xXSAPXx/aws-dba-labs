@@ -84,14 +84,18 @@
   become: true
   become_user: postgres
 
-# pgAudit logs through the server (shared_preload_libraries). Its extension adds the event triggers that give
-# each audit line the type and name of the object changed. template1: databases created later inherit it.
+# pgAudit logs through the server (shared_preload_libraries) in every database. Its extension is per database:
+# it adds the event triggers that give each DDL audit line the type and name of the object changed. Without
+# it, DDL in that database is still logged, but without them. template1: databases created later inherit it.
+# pgAudit refuses to create its extension while pgaudit.log is set, so these sessions start with it off.
 - name: Create the pgaudit extension in postgres and template1
   community.postgresql.postgresql_ext:
     name: pgaudit
     schema: public
     login_db: "{{ item }}"
   loop: [postgres, template1]
+  environment:
+    PGOPTIONS: "-c pgaudit.log=none"
   become: true
   become_user: postgres
 
@@ -156,6 +160,8 @@
   loop: "{{ postgresql_app_databases }}"
   loop_control:
     label: "{{ item.name }}"
+  environment:
+    PGOPTIONS: "-c pgaudit.log=none"
   become: true
   become_user: postgres
 
