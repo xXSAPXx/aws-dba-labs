@@ -123,6 +123,7 @@ A scenario plays a person or a tool doing something that goes wrong in productio
 labapp scenario list                          # every scenario: what it does, what it switches off, what it leaves behind
 labapp scenario run forgotten-transaction     # start one
 labapp scenario run migration-behind-report --seconds 120
+labapp scenario run revoked-privilege
 labapp scenario run dropped-table --confirm orders
 labapp scenario status                        # what is running, and when it ends by itself
 labapp scenario stop                          # end them now (or: stop NAME)
@@ -132,11 +133,13 @@ labapp scenario stop                          # end them now (or: stop NAME)
 |---|---|---|---|---|
 | `forgotten-transaction` | `shop_support`, from `psql` | Updates the 50,000 most active customers and never commits. The session sits idle in its transaction and keeps the row locks, so logins of those customers fail with `lock_timeout` | Nothing. `shop_support` has no `idle_in_transaction_session_timeout`, so nothing ends the transaction but you | Nothing |
 | `migration-behind-report` | `shop_migrator`, from `liquibase`, behind a report of `shop_analytics` | An `ALTER TABLE shop.orders` waits for a long report to finish. Every statement on `orders` queues behind the waiting `ALTER`: checkouts, payments, shipping, order history | `SET lock_timeout = 0` in the migration's session. With `shop_migrator`'s own 5 s, the `ALTER` gives up and the application recovers by itself | Nothing |
+| `revoked-privilege` | `shop_migrator`, from `psql` | A security cleanup runs `REVOKE SELECT ON shop.orders FROM shop_app`. Every statement of the application that reads `orders` fails with `permission denied for table orders`, also an `UPDATE ... WHERE`: checkouts, payments, shipping, order history | Nothing. The owner of a table may revoke any privilege on it | Nothing |
 | `dropped-table` | `shop_migrator`, from `psql` | `DROP TABLE shop.orders CASCADE`, at a random moment within 4 minutes: a cleanup script meant for staging, run against production. The seven foreign keys other tables have to `orders` go with it. Checkouts, payments, shipping, order history and the reports fail | Nothing. Whoever acts as a table's owner may drop it; the only protection is a backup | **The table stays dropped** |
 
 - **Each scenario says which protection it switches off and what it leaves behind.** The first is the staged mistake, not the lab's normal setup. Both are shown by `list` and `run`, logged, and written into the dashboard annotation.
-- **The first two end by themselves and keep no change.** `forgotten-transaction` rolls back after 10 minutes, and `migration-behind-report` withdraws its `ALTER` after 5; `--seconds` changes that for one run. The rolled-back update does leave dead rows in `customers` for autovacuum, like any rolled-back update.
-- **They also end when you fix them.** Terminate the forgotten session, the migration or the report in PostgreSQL, and the scenario notices and finishes.
+- **The first three end by themselves and keep no change.** `forgotten-transaction` rolls back after 10 minutes, `migration-behind-report` withdraws its `ALTER` after 5, and `revoked-privilege` grants the privilege again after 10; `--seconds` changes that for one run. The rolled-back update does leave dead rows in `customers` for autovacuum, like any rolled-back update.
+- **They also end when you fix them.** Terminate the forgotten session, the migration or the report in PostgreSQL, or grant the privilege again (`GRANT SELECT ON shop.orders TO shop_app`), and the scenario notices and finishes.
+- **`revoked-privilege` holds no lock and no session of its own,** so the lock dashboard and pg_activity show nothing unusual. What shows it: the application's errors on **Lab: Application**, `permission denied` in the PostgreSQL log, and the `REVOKE` in the [audit log](../../labs/postgresql-single/README.md#audit-who-changed-what). An idle session named `labapp-scenario` is the scenario watching for your fix.
 - **On the dashboards:** a scenario shows on the "Running" timeline of **Lab: Application** and as a purple annotation. Who it blocks is on **PostgreSQL lock blocking**.
 
 A scenario needs traffic to hurt: with the workload paused, nobody waits behind it.

@@ -103,6 +103,7 @@ For a drill, start an incident yourself. A [scenario](../../tools/labapp/README.
 labapp scenario list                          # what each one does and what it switches off
 labapp scenario run forgotten-transaction     # a support engineer leaves a transaction open
 labapp scenario run migration-behind-report   # an ALTER TABLE waits behind a long report, with SET lock_timeout = 0
+labapp scenario run revoked-privilege         # a security cleanup revokes SELECT on orders from the application
 labapp scenario run dropped-table --confirm orders   # DROP TABLE shop.orders: it stays dropped
 labapp scenario stop                          # end them now
 ```

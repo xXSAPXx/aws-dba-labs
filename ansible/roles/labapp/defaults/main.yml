@@ -58,6 +58,7 @@ labapp_workload_jobs:
 labapp_workload_scenarios:
   forgotten_transaction: { seconds: 600, customers: 50000 } # rows of the most active customers it locks
   migration_behind_report: { seconds: 300 }
+  revoked_privilege: { seconds: 600 }
   # Drops the table in the first 4 of its 10 minutes. While a report holds the table it tries again every
   # retry_seconds: the 6 minutes left are more than the longest report (bi_extract, 5 minutes).
   dropped_table: { seconds: 600, retry_seconds: 20 }

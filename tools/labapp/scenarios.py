@@ -1,7 +1,7 @@
 """labapp scenarios: incidents on demand, for DBA drills.
 
 A scenario plays a person or a tool doing something that goes wrong in production: a transaction left open,
-a migration started at the wrong moment, a table dropped by mistake. It runs inside the labapp-workload
+a migration started at the wrong moment, a privilege revoked, a table dropped by mistake. It runs inside the labapp-workload
 service, as the database user that person or tool would use, ends by itself after its time limit, and is
 marked on the PMM dashboards.
 
@@ -141,6 +141,33 @@ def dropped_table(run):
     return "shop.orders IS DROPPED and stays dropped. The way back is a restore, or rebuilding the shop database"
 
 
+def revoked_privilege(run):
+    """A security cleanup revokes a privilege the application still needs."""
+    cleanup = run.connect("migrator", "psql")
+    cleanup.execute("REVOKE SELECT ON shop.orders FROM shop_app")
+    cleanup.close()  # the person who ran it is gone; what stays is the missing privilege
+    LOG.info("scenario %s: shop_app may no longer read shop.orders", run.name)
+
+    def granted():
+        """True once shop_app may read the table again. Asked in a session that says what it is."""
+        nonlocal watch
+        if watch is None or not session_alive(watch):
+            watch = run.connect("migrator", "labapp-scenario")
+        return watch.execute("SELECT has_table_privilege('shop_app', 'shop.orders', 'SELECT')").fetchone()[0]
+
+    watch = None
+    while not run.wait(3):
+        try:
+            if granted():
+                return f"the privilege was granted again after {run.age():.0f} s"
+        except Exception as exc:  # the watching session was terminated: connect again at the next look
+            LOG.info("scenario %s: could not check the privilege: %s", run.name, short_error(exc))
+            watch = None
+    undo = run.connect("migrator", "labapp-scenario")
+    undo.execute("GRANT SELECT ON shop.orders TO shop_app")
+    return f"the scenario granted the privilege again after {run.age():.0f} s"
+
+
 SCENARIOS = {
     "forgotten-transaction": {
         "summary": "A support engineer updates customers in psql and leaves the transaction open.",
@@ -175,6 +202,21 @@ SCENARIOS = {
         "seconds": 300,
         "connections": ["analytics", "migrator"],
         "run": migration_behind_report,
+    },
+    "revoked-privilege": {
+        "summary": "A security cleanup revokes a privilege the application still needs: REVOKE SELECT ON shop.orders FROM shop_app.",
+        "runs_as": "shop_migrator, application psql",
+        "does": [
+            "REVOKE SELECT ON shop.orders FROM shop_app, run as the owner of the table. Then that session leaves.",
+            "Every statement of the application that reads orders fails: permission denied for table orders.",
+            "That includes UPDATE ... WHERE: checkouts, payments, shipping and order history stop working.",
+            "The REVOKE is in the audit log, with its time, user, application and client address.",
+        ],
+        "switches_off": "Nothing. The owner of a table may revoke any privilege on it.",
+        "leaves": "Nothing. At the time limit the scenario grants the privilege again, unless you already did.",
+        "seconds": 600,
+        "connections": ["migrator"],
+        "run": revoked_privilege,
     },
     "dropped-table": {
         "summary": "A cleanup script meant for staging is run against production: DROP TABLE shop.orders CASCADE.",
