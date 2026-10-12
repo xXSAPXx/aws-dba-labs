@@ -11,6 +11,7 @@ postgresql_shop_app_password: "{{ lookup('ansible.builtin.password', playbook_di
 postgresql_shop_reporting_password: "{{ lookup('ansible.builtin.password', playbook_dir ~ '/credentials/postgresql_shop_reporting_password', length=24, chars=['ascii_letters', 'digits']) }}"
 postgresql_shop_analytics_password: "{{ lookup('ansible.builtin.password', playbook_dir ~ '/credentials/postgresql_shop_analytics_password', length=24, chars=['ascii_letters', 'digits']) }}"
 postgresql_shop_batch_password: "{{ lookup('ansible.builtin.password', playbook_dir ~ '/credentials/postgresql_shop_batch_password', length=24, chars=['ascii_letters', 'digits']) }}"
+postgresql_debezium_password: "{{ lookup('ansible.builtin.password', playbook_dir ~ '/credentials/postgresql_debezium_password', length=24, chars=['ascii_letters', 'digits']) }}"
 postgresql_shop_support_password: "{{ lookup('ansible.builtin.password', playbook_dir ~ '/credentials/postgresql_shop_support_password', length=24, chars=['ascii_letters', 'digits']) }}"
 
 # Size of the generated shop data (schema/shop): 1 = about 1.5-2 GB. Used only when the data is first generated.

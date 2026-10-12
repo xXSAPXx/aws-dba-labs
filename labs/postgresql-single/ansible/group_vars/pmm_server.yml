@@ -56,3 +56,4 @@ labapp_workload_dsn:
   # For the scenarios (labapp scenario ...): the people and tools whose mistakes they play.
   support: "host={{ groups['postgresql'][0] }} dbname=shop user=shop_support password={{ postgresql_shop_support_password }}"
   migrator: "host={{ groups['postgresql'][0] }} dbname=shop user=shop_migrator password={{ postgresql_shop_migrator_password }}"
+  cdc: "host={{ groups['postgresql'][0] }} dbname=shop user=debezium password={{ postgresql_debezium_password }}"

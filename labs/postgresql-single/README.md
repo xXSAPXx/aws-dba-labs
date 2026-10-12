@@ -35,10 +35,10 @@ Run all commands from a Linux or macOS shell. On Windows, use Ubuntu on WSL (see
 ```bash
 cd labs/postgresql-single/terraform
 terraform init
-terraform apply              # about 3 minutes
+terraform apply              # about 2.5 minutes
 
 cd ../ansible
-ansible-playbook site.yml    # about 14 minutes on the first run, 4 after that
+ansible-playbook site.yml    # about 18 minutes on the first run, 4 after that
 ```
 
 `terraform apply` also writes the SSH config (`~/.ssh/aws-postgresql-lab.conf`) and the Ansible inventory (`ansible/inventory.ini`) with the new IPs. The playbook installs PostgreSQL and PMM, generates the lab passwords into `ansible/credentials/`, registers PostgreSQL in PMM, builds the shop database with Liquibase (the first run also generates its data, about 4 minutes), and starts the application: the labapp probe and the shop workload.
@@ -103,6 +103,8 @@ For a drill, start an incident yourself. A [scenario](../../tools/labapp/README.
 labapp scenario list                          # what each one does and what it switches off
 labapp scenario run forgotten-transaction     # a support engineer leaves a transaction open
 labapp scenario run migration-behind-report   # an ALTER TABLE waits behind a long report, with SET lock_timeout = 0
+labapp scenario run revoked-privilege         # a security cleanup revokes SELECT on orders from the application
+labapp scenario run abandoned-slot            # a replication slot nobody reads holds the WAL
 labapp scenario run dropped-table --confirm orders   # DROP TABLE shop.orders: it stays dropped
 labapp scenario stop                          # end them now
 ```

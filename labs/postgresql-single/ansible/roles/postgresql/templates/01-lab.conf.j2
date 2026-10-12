@@ -33,7 +33,9 @@ deadlock_timeout = 1s                   # check for deadlocks after 1 s of waiti
 #------------------------------------------------------------------------------
 # WAL and checkpoints
 #------------------------------------------------------------------------------
-wal_level = replica                     # enough for streaming replicas and pgBackRest
+# replica: enough for streaming replicas and pgBackRest. logical: also for logical replication slots
+# (change data capture, logical replication), for slightly more WAL.
+wal_level = {{ postgresql_wal_level }}
 wal_compression = lz4                   # smaller full-page images in WAL, cheap on CPU
 max_wal_size = 2GB                      # so checkpoints are driven by time, not WAL volume
 min_wal_size = 512MB
