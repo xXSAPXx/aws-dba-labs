@@ -1,0 +1,21 @@
+---
+# Collects the updates that main.yml started. With liquibase_update_mode "background" a later play calls
+# this file by itself (import_role, tasks_from: finish.yml), on the same host and in the same playbook run.
+- name: Wait for the pending changesets (liquibase update)
+  ansible.builtin.async_status:
+    jid: "{{ item.ansible_job_id }}"
+  loop: "{{ liquibase_update_jobs.results }}"
+  loop_control:
+    label: "{{ item.item.name }}"
+  register: liquibase_update
+  until: liquibase_update.finished
+  retries: 360
+  delay: 10
+  changed_when: liquibase_update.stdout | default('') is search('Run:\s+[1-9]')
+
+- name: Show the update summary
+  ansible.builtin.debug:
+    msg: "{{ item.stdout_lines | select('search', '^(Run|Previously run|Filtered out|Failed|Total change sets):') | list }}"
+  loop: "{{ liquibase_update.results }}"
+  loop_control:
+    label: "{{ item.item.item.name }}"

@@ -38,10 +38,12 @@ terraform init
 terraform apply              # about 2.5 minutes
 
 cd ../ansible
-ansible-playbook site.yml    # about 18 minutes on the first run, 4 after that
+ansible-playbook site.yml    # about 11 minutes on the first run, 3 after that
 ```
 
-`terraform apply` also writes the SSH config (`~/.ssh/aws-postgresql-lab.conf`) and the Ansible inventory (`ansible/inventory.ini`) with the new IPs. The playbook installs PostgreSQL and PMM, generates the lab passwords into `ansible/credentials/`, registers PostgreSQL in PMM, builds the shop database with Liquibase (the first run also generates its data, about 4 minutes), and starts the application: the labapp probe and the shop workload.
+`terraform apply` also writes the SSH config (`~/.ssh/aws-postgresql-lab.conf`) and the Ansible inventory (`ansible/inventory.ini`) with the new IPs. The playbook installs PostgreSQL and PMM, generates the lab passwords into `ansible/credentials/`, registers PostgreSQL in PMM, builds the shop database with Liquibase (the first run also generates its data, about 5 minutes), and starts the application: the labapp probe and the shop workload.
+
+The two servers are set up at the same time, and the shop's data is generated while PMM is still being installed: the long steps overlap. If the new NAT gateway is slow to pass traffic, the first run takes a minute or two longer.
 
 ## Connect
 
@@ -231,7 +233,7 @@ cd labs/postgresql-single/ansible
 ansible-playbook site.yml        # creates the database, runs the migrations, generates the data, starts the workload
 ```
 
-It takes about 8 minutes: 4 for the playbook to check everything else, 4 for the data. The audit log keeps the `DROP DATABASE`, like every other schema change.
+It takes up to 8 minutes, most of it the data. The audit log keeps the `DROP DATABASE`, like every other schema change.
 
 ## Break, fix, reset
 

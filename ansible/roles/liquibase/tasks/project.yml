@@ -1,12 +1,41 @@
 ---
-- name: Copy the changelog from the repo for {{ liquibase_project.name }}
-  ansible.builtin.copy:
-    src: "{{ liquibase_project.changelog_dir }}/"
+# The changelog travels as one archive. Copied file by file, every file is its own round trip to the server:
+# a minute for 20 files on a new lab, half a minute on every later run.
+- name: Create a temporary file on this machine for the changelog of {{ liquibase_project.name }}
+  ansible.builtin.tempfile:
+    state: file
+    prefix: liquibase-{{ liquibase_project.name }}-
+    suffix: .tar.gz
+  register: liquibase_archive
+  delegate_to: localhost
+  become: false
+  changed_when: false
+
+- name: Pack the changelog from the repo for {{ liquibase_project.name }}
+  community.general.archive:
+    path: "{{ liquibase_project.changelog_dir }}/"
+    dest: "{{ liquibase_archive.path }}"
+    format: gz
+    mode: "0600"
+  delegate_to: localhost
+  become: false
+  changed_when: false
+
+- name: Unpack the changelog on the server for {{ liquibase_project.name }}
+  ansible.builtin.unarchive:
+    src: "{{ liquibase_archive.path }}"
     dest: "{{ liquibase_projects_dir }}/{{ liquibase_project.name }}/"
     owner: root
     group: root
-    mode: u=rw,go=r
-    directory_mode: u=rwx,go=rx
+    mode: a-x,u+rwX,go+rX # files: u=rw,go=r; directories also get x
+
+- name: Remove the temporary file for {{ liquibase_project.name }}
+  ansible.builtin.file:
+    path: "{{ liquibase_archive.path }}"
+    state: absent
+  delegate_to: localhost
+  become: false
+  changed_when: false
 
 # A file deleted from the repo must not stay on the server, or includeAll would still apply it.
 - name: List the changelog files on the server for {{ liquibase_project.name }}
@@ -43,15 +72,3 @@
     owner: root
     group: root
     mode: "0755"
-
-# The first run also generates the data (context "data"): minutes, so it runs in the background on the server.
-- name: Apply the pending changesets (liquibase update) for {{ liquibase_project.name }}
-  ansible.builtin.command: /usr/local/bin/liquibase-{{ liquibase_project.name }} update
-  register: liquibase_update
-  changed_when: liquibase_update.stdout is search('Run:\s+[1-9]')
-  async: 3600
-  poll: 10
-
-- name: Show the update summary for {{ liquibase_project.name }}
-  ansible.builtin.debug:
-    msg: "{{ liquibase_update.stdout_lines | select('search', '^(Run|Previously run|Filtered out|Failed|Total change sets):') | list }}"

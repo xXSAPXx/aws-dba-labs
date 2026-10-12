@@ -22,5 +22,14 @@ liquibase_projects_dir: /opt/liquibase-projects
 #     parameters: { shop_scale: 1 }               # changelog parameters, ${shop_scale} in the SQL
 liquibase_projects: []
 
+# When the playbook waits for `liquibase update`:
+#   wait        The role starts the update and waits for it: the default, and what migrate.yml uses.
+#   background  The role only starts it. The update first waits until its database accepts the project's
+#               login, so it can start while the database server is still being installed. A later play
+#               collects the result: import_role liquibase, tasks_from: finish.yml
+liquibase_update_mode: wait
+# Seconds a background update waits for its database before it gives up.
+liquibase_database_wait: 1800
+
 # OS user who may run the wrapper commands without sudo (reads the credentials in /etc/liquibase).
 liquibase_os_user: "{{ ansible_user }}"
