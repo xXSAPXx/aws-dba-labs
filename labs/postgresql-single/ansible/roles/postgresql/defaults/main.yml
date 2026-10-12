@@ -29,6 +29,11 @@ postgresql_maintenance_work_mem_mb: "{{ [64, [1024, (postgresql_memory_mb | int 
 # a session waiting longer for a lock gives up instead of queueing, so sessions don't pile up behind it.
 postgresql_lock_timeout: 5s
 
+# replica: enough for streaming replicas and pgBackRest. logical: also lets a program follow the changes of
+# single tables through a logical replication slot (change data capture such as Debezium, logical
+# replication), for slightly more WAL. Changing it restarts PostgreSQL.
+postgresql_wal_level: logical
+
 # Audit with pgAudit: the statement classes logged for every user, as "AUDIT:" lines in the server log.
 #   ddl: CREATE, ALTER, DROP of any object.   role: GRANT, REVOKE, CREATE / ALTER / DROP ROLE.
 # Other classes: read, write (INSERT, UPDATE, DELETE, TRUNCATE), function, misc, misc_set, all. none = off.

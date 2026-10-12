@@ -37,7 +37,7 @@ labapp_workload_metrics_port: 9302
 labapp_workload_control_port: 9301 # 127.0.0.1 only, used by `labapp load`
 
 # One connection string per role, set by the lab (group_vars): app, reporting, analytics, batch.
-# The scenarios also need: support, migrator.
+# The scenarios also need: support, migrator, cdc.
 labapp_workload_dsn: {}
 
 # Transaction mix (weights); empty = the defaults in tools/labapp/workload.py.
@@ -59,6 +59,7 @@ labapp_workload_scenarios:
   forgotten_transaction: { seconds: 600, customers: 50000 } # rows of the most active customers it locks
   migration_behind_report: { seconds: 300 }
   revoked_privilege: { seconds: 600 }
+  abandoned_slot: { seconds: 1800 } # WAL builds up slowly: give it time to show
   # Drops the table in the first 4 of its 10 minutes. While a report holds the table it tries again every
   # retry_seconds: the 6 minutes left are more than the longest report (bi_extract, 5 minutes).
   dropped_table: { seconds: 600, retry_seconds: 20 }

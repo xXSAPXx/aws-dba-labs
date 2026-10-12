@@ -63,6 +63,12 @@ postgresql_app_users:
     conn_limit: 5
     configuration:
       statement_timeout: 60s
+  # A program: the change data capture connector (Debezium), which sends the order tables' changes to Kafka.
+  # REPLICATION lets it create and read a replication slot.
+  - name: debezium
+    password: "{{ postgresql_debezium_password }}"
+    role_attr_flags: LOGIN,REPLICATION
+    conn_limit: 3
 postgresql_memberships:
   - groups: [shop_owner]
     target_roles: [shop_migrator]
@@ -79,5 +85,5 @@ postgresql_pmm_server_address: "{{ hostvars[groups['pmm_server'][0]]['private_ip
 postgresql_hba_rules:
   - { database: bench, user: bench, address: "{{ postgresql_pmm_server_address }}" }
   - { database: labapp, user: labapp, address: "{{ postgresql_pmm_server_address }}" }
-  - { database: shop, user: "shop_app,shop_reporting,shop_analytics,shop_batch,shop_support,shop_migrator", address: "{{ postgresql_pmm_server_address }}" }
+  - { database: shop, user: "shop_app,shop_reporting,shop_analytics,shop_batch,shop_support,shop_migrator,debezium", address: "{{ postgresql_pmm_server_address }}" }
   - { database: all, user: dba, address: "{{ postgresql_pmm_server_address }}" }
