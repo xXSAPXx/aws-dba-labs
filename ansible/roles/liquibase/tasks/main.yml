@@ -15,10 +15,9 @@
     owner: root
     group: root
     mode: "0755"
-  loop:
-    - "{{ liquibase_dir }}/{{ liquibase_version }}"
-    - "{{ liquibase_projects_dir }}"
-    - /etc/liquibase
+  loop: >-
+    {{ [liquibase_dir ~ '/' ~ liquibase_version, liquibase_projects_dir, '/etc/liquibase']
+       + (liquibase_projects | map(attribute='name') | map('regex_replace', '^', liquibase_projects_dir ~ '/') | list) }}
 
 - name: Download Liquibase (checksum verified)
   ansible.builtin.get_url:
@@ -47,14 +46,45 @@
     dest: "{{ liquibase_dir }}/current"
     state: link
 
+- name: Install the command that applies the pending changesets
+  ansible.builtin.copy:
+    src: update-when-ready.sh
+    dest: "{{ liquibase_dir }}/update-when-ready.sh"
+    owner: root
+    group: root
+    mode: "0755"
+
 
 ##################################################################
-# Per database: changelog, settings, wrapper command, update:
+# Per database: changelog, settings, wrapper command:
 ##################################################################
 
-- name: Set up and migrate each database
+- name: Set up each database's project
   ansible.builtin.include_tasks: project.yml
   loop: "{{ liquibase_projects }}"
   loop_control:
     loop_var: liquibase_project
     label: "{{ liquibase_project.name }}"
+
+
+##################################################################
+# Apply the pending changesets (liquibase update):
+##################################################################
+
+# The first run also generates the data (context "data"): minutes, so it runs in the background on the server.
+# Mode "background" (see defaults): the update waits for its database by itself, and a later play collects it.
+- name: Start the pending changesets in the background (liquibase update)
+  ansible.builtin.command: >-
+    {{ liquibase_dir }}/update-when-ready.sh {{ item.name }}
+    {{ (liquibase_update_mode == 'background') | ternary(liquibase_database_wait, 0) }}
+  async: 3600
+  poll: 0
+  loop: "{{ liquibase_projects }}"
+  loop_control:
+    label: "{{ item.name }}"
+  register: liquibase_update_jobs
+  changed_when: false # what it changed is reported when the result is collected
+
+- name: Collect the updates
+  ansible.builtin.include_tasks: finish.yml
+  when: liquibase_update_mode != 'background'
