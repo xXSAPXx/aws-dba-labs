@@ -275,8 +275,9 @@ SCENARIOS = {
         "does": [
             "Creates the logical replication slot \"debezium\" in the shop database, as the connector does when it is set up.",
             "Then the connector is gone, as if Kafka were down: nothing reads the slot.",
-            "PostgreSQL keeps every WAL file the slot has not read. Nothing fails: pg_wal on the data volume grows.",
-            "The slot is in pg_replication_slots: not active, its restart_lsn standing still.",
+            "PostgreSQL keeps all WAL the slot has not read: about 0.7 GB per hour at the lab's normal load. Nothing fails.",
+            "pg_wal on disk only grows once that is more than the 2 GB PostgreSQL keeps anyway (max_wal_size).",
+            "The slot is in pg_replication_slots: not active, its restart_lsn standing still. PMM collects it too.",
             "No audit line: a slot is created by a function call, which pgAudit does not log.",
         ],
         "switches_off": "Nothing. max_slot_wal_keep_size is unlimited by default: nothing stops a slot from holding WAL.",
@@ -315,7 +316,7 @@ SCENARIOS = {
 
 
 def minutes(seconds):
-    return f"{seconds / 60:g} min" if seconds >= 60 else f"{seconds} s"
+    return f"{round(seconds / 60, 1):g} min" if seconds >= 60 else f"{seconds} s"
 
 
 def describe(name, seconds=None):
