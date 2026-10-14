@@ -58,20 +58,17 @@ labapp_workload_dsn:
   migrator: "host={{ groups['postgresql'][0] }} dbname=shop user=shop_migrator password={{ postgresql_shop_migrator_password }}"
   cdc: "host={{ groups['postgresql'][0] }} dbname=shop user=debezium password={{ postgresql_debezium_password }}"
 
-# pgwatch demo (pgwatch-demo.yml): the databases it monitors.
+# pgwatch demo (pgwatch-demo.yml): one entry per PostgreSQL server. pgwatch finds every database on it by
+# itself, also ones created later, and shows each as <server>_<database>.
 pgwatch_demo_sources:
-  - name: "{{ groups['postgresql'][0] }}-shop"
+  - name: "{{ groups['postgresql'][0] }}"
+    kind: postgres-continuous-discovery
     host: "{{ groups['postgresql'][0] }}"
     address: "{{ hostvars[groups['postgresql'][0]]['private_ip'] }}"
-    dbname: shop
+    dbname: postgres
     user: pgwatch
     password: "{{ postgresql_pgwatch_password }}"
-    preset: exhaustive
-  # The same database again for the "Recommendations" dashboard: its checks are a preset of their own.
-  - name: "{{ groups['postgresql'][0] }}-shop-recommendations"
-    host: "{{ groups['postgresql'][0] }}"
-    address: "{{ hostvars[groups['postgresql'][0]]['private_ip'] }}"
-    dbname: shop
-    user: pgwatch
-    password: "{{ postgresql_pgwatch_password }}"
-    preset: recommendations
+    presets: [exhaustive, recommendations]
+    # Can only fail here: the statement metrics need pg_stat_statements (the lab loads pg_stat_monitor for
+    # PMM), cpu_load needs Python inside PostgreSQL, reco_add_index needs the pg_qualstats extension.
+    exclude: [stat_statements, stat_statements_calls, cpu_load, reco_add_index]

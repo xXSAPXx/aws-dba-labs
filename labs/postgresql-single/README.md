@@ -203,15 +203,17 @@ ssh -L 3000:localhost:3000 -L 8080:localhost:8080 pmm-server   # keep it open wh
 - **Grafana:** http://localhost:3000, user `admin`, password in `ansible/credentials/pgwatch_demo_grafana_password`. Start with "0. Health Check" and "2. Database Overview": 22 dashboards in all, data after 2 to 3 minutes.
 - **pgwatch's web UI:** http://localhost:8080, user `admin`, password in `ansible/credentials/pgwatch_demo_web_password`. It lists the monitored databases and their metrics, and shows pgwatch's log.
 - **Only through the tunnel:** both listen on the PMM server's localhost, so nothing new is open to the internet.
-- **What it monitors:** the shop database, as the user `pgwatch` (`pg_monitor`, statistics only), with pgwatch's "exhaustive" set of metrics. A second entry for the same database, `postgresql-source-shop-recommendations`, runs the checks of the "Recommendations" dashboard: pick it there.
+- **What it monitors:** every database of `postgresql-source`, found by pgwatch itself (its "continuous discovery"), also ones created later. Each shows in the dashboards' database list as `postgresql-source_<database>`, for example `postgresql-source_shop`. pgwatch connects as the user `pgwatch` (`pg_monitor`, statistics only) and collects its "exhaustive" set of metrics plus the checks of the "Recommendations" dashboard.
+- **A new database** gets measurements within about 2 minutes (88 s in a test), without any change to pgwatch: pgwatch looks for new databases every 2 minutes.
+- **Connections grow with the databases:** pgwatch opens up to 2 connections per database here (`pgwatch_demo_connections_per_db`; pgwatch's own default is 4). The `pgwatch` user's connection limit (20) has to allow databases × 2, plus a few: 30 databases would need about 65. When the limit is too low, PostgreSQL refuses pgwatch ("too many connections for role") and the newest databases get almost no measurements.
 - **Empty on purpose:**
-  - The statement dashboards ("3. Query Performance Analysis", "Single query details"): the lab loads `pg_stat_monitor` for PMM and not `pg_stat_statements`. pgwatch's log shows that as an error every few minutes.
+  - The statement dashboards ("3. Query Performance Analysis", "Single query details"): the lab loads `pg_stat_monitor` for PMM and not `pg_stat_statements`, so those metrics are left out.
   - "System Stats": CPU, memory and disk come from Python functions inside PostgreSQL.
   - "Server Log Events": pgwatch reads the log only when it runs on the database server.
   - "PgBouncer stats", "Pgpool Stats", "Replication": the lab has none of these.
 - **Version 5.3.0, not the newest:** the 6.0.0 demo image cannot start its own PostgreSQL (it preloads TimescaleDB, which that image lacks).
 - **A fix the playbook applies to the demo's Grafana:** the image defines its data source with the database name where Grafana 12 no longer looks. Without the fix every panel shows N/A, and Explore says "You do not currently have a default database configured for this data source". If the container is ever restarted, run `pgwatch-demo.yml` again.
-- **What it costs the PMM server:** about 470 MB of memory and 2.2 GB of disk for the image.
+- **What it costs the PMM server:** 200 to 470 MB of memory and 2.2 GB of disk for the image.
 - **A demo:** one container with everything in it, the way CYBERTEC offers it for trying pgwatch out. A lasting setup would run the collector, its database and its Grafana as services of their own.
 
 ## Audit: who changed what

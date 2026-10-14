@@ -18,12 +18,22 @@ pgwatch_demo_grafana_password: "" # Grafana user: admin. Set by the lab, require
 pgwatch_demo_web_user: admin
 pgwatch_demo_web_password: "" # set by the lab, required
 
-# Databases to monitor, set by the lab. Each is added through pgwatch's REST API, if it isn't there yet.
-#   - name: postgresql-source-shop     # the name pgwatch shows
-#     host: postgresql-source          # name in the connection string
-#     address: 10.0.0.5                # its IP: the container doesn't see the server's /etc/hosts
-#     dbname: shop
+# Connections pgwatch opens at most per database it monitors (pgwatch's default: 4). It multiplies with the
+# databases: 30 databases at 4 each would be 120 connections. The monitoring user's connection limit on the
+# server has to allow databases x this, plus a few.
+pgwatch_demo_connections_per_db: 2
+
+# What to monitor, set by the lab. Each entry is added through pgwatch's REST API, if it isn't there yet.
+#   - name: postgresql-source                    # the name pgwatch shows
+#     kind: postgres-continuous-discovery        # every database of the server, also ones created later.
+#                                                # Each shows as <name>_<database>. kind postgres: one database.
+#     host: postgresql-source                    # name in the connection string
+#     address: 10.0.0.5                          # its IP: the container doesn't see the server's /etc/hosts
+#     dbname: postgres                           # the database it connects to first
 #     user: pgwatch
 #     password: "..."
-#     preset: exhaustive               # pgwatch's set of metrics and intervals
+#     presets: [exhaustive, recommendations]     # pgwatch's sets of metrics, added together
+#     exclude: [stat_statements]                 # metrics left out (ones that can only fail on this server)
+#     include: ""                                # discovery: only databases matching this regex ("" = all)
+#     exclude_databases: ""                      # discovery: no databases matching this regex
 pgwatch_demo_sources: []

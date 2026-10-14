@@ -70,11 +70,12 @@ postgresql_app_users:
     role_attr_flags: LOGIN,REPLICATION
     conn_limit: 3
   # pgwatch (pgwatch-demo.yml), the second monitoring next to PMM: reads statistics only (pg_monitor, below).
-  # 10 connections: the demo watches the shop database twice, and pgwatch opens several at once when it
-  # starts a database. With 5, PostgreSQL refused one ("too many connections for role").
+  # It watches every database of the server, with up to 2 connections each (pgwatch_demo_connections_per_db):
+  # the limit is databases x 2, plus a few. With 10 and 5 databases, PostgreSQL refused it 80 times in
+  # 6 minutes ("too many connections for role"), and a new database got almost no measurements.
   - name: pgwatch
     password: "{{ postgresql_pgwatch_password }}"
-    conn_limit: 10
+    conn_limit: 20
 postgresql_memberships:
   - groups: [shop_owner]
     target_roles: [shop_migrator]

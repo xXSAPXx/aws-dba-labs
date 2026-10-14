@@ -10,6 +10,7 @@
       PW_GRAFANAPASSWORD={{ pgwatch_demo_grafana_password }}
       PW_WEBUSER={{ pgwatch_demo_web_user }}
       PW_WEBPASSWORD={{ pgwatch_demo_web_password }}
+      PW_MAX_PARALLEL_CONNECTIONS_PER_DB={{ pgwatch_demo_connections_per_db }}
     dest: /etc/pgwatch-demo.env
     owner: root
     group: root
@@ -125,6 +126,16 @@
   register: pgwatch_demo_existing
   no_log: true
 
+- name: Read pgwatch's presets (named sets of metrics with their intervals)
+  ansible.builtin.uri:
+    url: http://127.0.0.1:{{ pgwatch_demo_web_port }}/preset
+    headers:
+      Token: "{{ pgwatch_demo_login.content | trim | regex_replace('^\"|\"$', '') }}"
+    return_content: true
+  register: pgwatch_demo_presets
+  no_log: true
+
+# A source's metrics: its presets added together, without the metrics in `exclude`.
 - name: Add the databases to monitor
   ansible.builtin.uri:
     url: http://127.0.0.1:{{ pgwatch_demo_web_port }}/source
@@ -134,10 +145,16 @@
     body_format: json
     body:
       Name: "{{ item.name }}"
-      Kind: postgres
+      Kind: "{{ item.kind | default('postgres') }}"
       Group: default
       ConnStr: postgresql://{{ item.user }}:{{ item.password }}@{{ item.host }}:5432/{{ item.dbname }}
-      PresetMetrics: "{{ item.preset | default('exhaustive') }}"
+      Metrics: >-
+        {{ item.presets
+           | map('extract', pgwatch_demo_presets.content | from_json) | map(attribute='Metrics') | list | combine
+           | dict2items | rejectattr('key', 'in', item.exclude | default([])) | items2dict }}
+      PresetMetrics: ""
+      IncludePattern: "{{ item.include | default('') }}"
+      ExcludePattern: "{{ item.exclude_databases | default('') }}"
       IsEnabled: true
     status_code: [200, 201]
   loop: "{{ pgwatch_demo_sources }}"
