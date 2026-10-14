@@ -57,3 +57,18 @@ labapp_workload_dsn:
   support: "host={{ groups['postgresql'][0] }} dbname=shop user=shop_support password={{ postgresql_shop_support_password }}"
   migrator: "host={{ groups['postgresql'][0] }} dbname=shop user=shop_migrator password={{ postgresql_shop_migrator_password }}"
   cdc: "host={{ groups['postgresql'][0] }} dbname=shop user=debezium password={{ postgresql_debezium_password }}"
+
+# pgwatch demo (pgwatch-demo.yml): one entry per PostgreSQL server. pgwatch finds every database on it by
+# itself, also ones created later, and shows each as <server>_<database>.
+pgwatch_demo_sources:
+  - name: "{{ groups['postgresql'][0] }}"
+    kind: postgres-continuous-discovery
+    host: "{{ groups['postgresql'][0] }}"
+    address: "{{ hostvars[groups['postgresql'][0]]['private_ip'] }}"
+    dbname: postgres
+    user: pgwatch
+    password: "{{ postgresql_pgwatch_password }}"
+    presets: [exhaustive, recommendations]
+    # Can only fail here: the statement metrics need pg_stat_statements (the lab loads pg_stat_monitor for
+    # PMM), cpu_load needs Python inside PostgreSQL, reco_add_index needs the pg_qualstats extension.
+    exclude: [stat_statements, stat_statements_calls, cpu_load, reco_add_index]

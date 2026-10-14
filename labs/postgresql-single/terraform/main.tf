@@ -104,6 +104,6 @@ module "pmm_server" {
   pmm_tag_name = "pmm-server"
 
   # EBS Volume Settings:
-  volume_size = 10
+  volume_size = var.pmm_volume_size
   volume_type = "gp3"
 }

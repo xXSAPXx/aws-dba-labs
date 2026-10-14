@@ -1,0 +1,13 @@
+---
+# pgwatch, tried out next to PMM and separate from it (not part of site.yml). Run after site.yml:
+#   ansible-playbook pgwatch-demo.yml
+# Then, from your machine, open a tunnel and keep it open while you look:
+#   ssh -L 3000:localhost:3000 -L 8080:localhost:8080 pmm-server
+#   Grafana:        http://localhost:3000   admin / credentials/pgwatch_demo_grafana_password
+#   pgwatch web UI: http://localhost:8080   admin / credentials/pgwatch_demo_web_password
+
+- name: Run the pgwatch demo on the PMM server
+  hosts: pmm_server
+  become: true
+  roles:
+    - pgwatch_demo

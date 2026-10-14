@@ -1,0 +1,166 @@
+---
+##################################################################
+# The container (Docker is there already, for PMM):
+##################################################################
+
+- name: Write the pgwatch demo's logins
+  ansible.builtin.copy:
+    content: |
+      PW_GRAFANANOANONYMOUS=1
+      PW_GRAFANAPASSWORD={{ pgwatch_demo_grafana_password }}
+      PW_WEBUSER={{ pgwatch_demo_web_user }}
+      PW_WEBPASSWORD={{ pgwatch_demo_web_password }}
+      PW_MAX_PARALLEL_CONNECTIONS_PER_DB={{ pgwatch_demo_connections_per_db }}
+    dest: /etc/pgwatch-demo.env
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true # contains the passwords
+
+- name: Check whether the pgwatch demo container exists
+  ansible.builtin.command: docker inspect --type container {{ pgwatch_demo_container_name }}
+  register: pgwatch_demo_container
+  changed_when: false
+  failed_when: false
+
+# A changed setting only applies to a new container: docker rm -f pgwatch-demo, then run this again.
+- name: Start the pgwatch demo container
+  ansible.builtin.command: >-
+    docker run --detach --restart unless-stopped
+    --publish 127.0.0.1:{{ pgwatch_demo_grafana_port }}:3000
+    --publish 127.0.0.1:{{ pgwatch_demo_web_port }}:8080
+    --env-file /etc/pgwatch-demo.env
+    {% for source in pgwatch_demo_sources | unique(attribute='host') %}
+    --add-host {{ source.host }}:{{ source.address }}
+    {% endfor %}
+    --name {{ pgwatch_demo_container_name }}
+    {{ pgwatch_demo_image }}
+  when: pgwatch_demo_container.rc != 0
+  changed_when: true
+
+- name: Wait for pgwatch's web UI
+  ansible.builtin.uri:
+    url: http://127.0.0.1:{{ pgwatch_demo_web_port }}/
+  register: pgwatch_demo_web
+  until: pgwatch_demo_web.status == 200
+  retries: 60
+  delay: 5
+
+- name: Wait for pgwatch's Grafana
+  ansible.builtin.uri:
+    url: http://127.0.0.1:{{ pgwatch_demo_grafana_port }}/api/health
+  register: pgwatch_demo_grafana
+  until: pgwatch_demo_grafana.status == 200
+  retries: 60
+  delay: 5
+
+# The demo writes its Grafana data source with the database name only at the top level. Its Grafana (12)
+# reads it from jsonData: without it the browser sends no query at all, the panels show N/A and Explore
+# says "You do not currently have a default database configured for this data source".
+- name: Check whether Grafana's data source has its database in jsonData
+  ansible.builtin.command:
+    argv: [docker, exec, "{{ pgwatch_demo_container_name }}", grep, -c, "database: pgwatch_metrics", "{{ pgwatch_demo_datasource_file }}"]
+  register: pgwatch_demo_datasource
+  changed_when: false
+  failed_when: pgwatch_demo_datasource.rc > 1
+
+- name: Fix Grafana's data source, and restart the demo's Grafana to read it
+  when: pgwatch_demo_datasource.stdout | int < 2
+  block:
+    - name: Add the database to the data source's jsonData
+      ansible.builtin.command:
+        argv: [docker, exec, "{{ pgwatch_demo_container_name }}", sed, -i, 's/^  jsonData:$/  jsonData:\n     database: pgwatch_metrics/',
+               "{{ pgwatch_demo_datasource_file }}"]
+      changed_when: true
+
+    - name: Stop the demo's Grafana
+      ansible.builtin.command:
+        argv: [docker, exec, "{{ pgwatch_demo_container_name }}", supervisorctl, stop, grafana]
+      changed_when: true
+
+    # A start right after the stop fails while the old process still holds the port (seen on the lab).
+    - name: Wait until Grafana's port is free in the container
+      ansible.builtin.command:
+        argv: [docker, exec, "{{ pgwatch_demo_container_name }}", grep, -qE, ":0BB8 [0-9A-F]+:0000 0A", /proc/net/tcp, /proc/net/tcp6]
+      register: pgwatch_demo_port
+      until: pgwatch_demo_port.rc == 1
+      retries: 30
+      delay: 2
+      changed_when: false
+      failed_when: pgwatch_demo_port.rc > 1
+
+    - name: Start the demo's Grafana
+      ansible.builtin.command:
+        argv: [docker, exec, "{{ pgwatch_demo_container_name }}", supervisorctl, start, grafana]
+      changed_when: true
+
+    - name: Wait for pgwatch's Grafana again
+      ansible.builtin.uri:
+        url: http://127.0.0.1:{{ pgwatch_demo_grafana_port }}/api/health
+      register: pgwatch_demo_grafana
+      until: pgwatch_demo_grafana.status == 200
+      retries: 60
+      delay: 5
+
+
+##################################################################
+# The databases to monitor (pgwatch's REST API):
+##################################################################
+
+- name: Log in to pgwatch's REST API
+  ansible.builtin.uri:
+    url: http://127.0.0.1:{{ pgwatch_demo_web_port }}/login
+    method: POST
+    body_format: json
+    body: { user: "{{ pgwatch_demo_web_user }}", password: "{{ pgwatch_demo_web_password }}" }
+    return_content: true
+  register: pgwatch_demo_login
+  no_log: true
+
+- name: List the databases pgwatch monitors
+  ansible.builtin.uri:
+    url: http://127.0.0.1:{{ pgwatch_demo_web_port }}/source
+    headers:
+      Token: "{{ pgwatch_demo_login.content | trim | regex_replace('^\"|\"$', '') }}"
+    return_content: true
+  register: pgwatch_demo_existing
+  no_log: true
+
+- name: Read pgwatch's presets (named sets of metrics with their intervals)
+  ansible.builtin.uri:
+    url: http://127.0.0.1:{{ pgwatch_demo_web_port }}/preset
+    headers:
+      Token: "{{ pgwatch_demo_login.content | trim | regex_replace('^\"|\"$', '') }}"
+    return_content: true
+  register: pgwatch_demo_presets
+  no_log: true
+
+# A source's metrics: its presets added together, without the metrics in `exclude`.
+- name: Add the databases to monitor
+  ansible.builtin.uri:
+    url: http://127.0.0.1:{{ pgwatch_demo_web_port }}/source
+    method: POST
+    headers:
+      Token: "{{ pgwatch_demo_login.content | trim | regex_replace('^\"|\"$', '') }}"
+    body_format: json
+    body:
+      Name: "{{ item.name }}"
+      Kind: "{{ item.kind | default('postgres') }}"
+      Group: default
+      ConnStr: postgresql://{{ item.user }}:{{ item.password }}@{{ item.host }}:5432/{{ item.dbname }}
+      Metrics: >-
+        {{ item.presets
+           | map('extract', pgwatch_demo_presets.content | from_json) | map(attribute='Metrics') | list | combine
+           | dict2items | rejectattr('key', 'in', item.exclude | default([])) | items2dict }}
+      PresetMetrics: ""
+      IncludePattern: "{{ item.include | default('') }}"
+      ExcludePattern: "{{ item.exclude_databases | default('') }}"
+      IsEnabled: true
+    status_code: [200, 201]
+  loop: "{{ pgwatch_demo_sources }}"
+  loop_control:
+    label: "{{ item.name }}"
+  # pgwatch sends the list as text/plain, so Ansible does not parse it by itself.
+  when: item.name not in (pgwatch_demo_existing.content | from_json | map(attribute='Name') | list)
+  changed_when: true
+  no_log: true # the connection string contains the password

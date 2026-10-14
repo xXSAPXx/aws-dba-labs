@@ -12,6 +12,10 @@ postgresql_shop_reporting_password: "{{ lookup('ansible.builtin.password', playb
 postgresql_shop_analytics_password: "{{ lookup('ansible.builtin.password', playbook_dir ~ '/credentials/postgresql_shop_analytics_password', length=24, chars=['ascii_letters', 'digits']) }}"
 postgresql_shop_batch_password: "{{ lookup('ansible.builtin.password', playbook_dir ~ '/credentials/postgresql_shop_batch_password', length=24, chars=['ascii_letters', 'digits']) }}"
 postgresql_debezium_password: "{{ lookup('ansible.builtin.password', playbook_dir ~ '/credentials/postgresql_debezium_password', length=24, chars=['ascii_letters', 'digits']) }}"
+postgresql_pgwatch_password: "{{ lookup('ansible.builtin.password', playbook_dir ~ '/credentials/postgresql_pgwatch_password', length=24, chars=['ascii_letters', 'digits']) }}"
+# pgwatch demo (pgwatch-demo.yml): its Grafana (user admin) and its web UI (user admin).
+pgwatch_demo_grafana_password: "{{ lookup('ansible.builtin.password', playbook_dir ~ '/credentials/pgwatch_demo_grafana_password', length=24, chars=['ascii_letters', 'digits']) }}"
+pgwatch_demo_web_password: "{{ lookup('ansible.builtin.password', playbook_dir ~ '/credentials/pgwatch_demo_web_password', length=24, chars=['ascii_letters', 'digits']) }}"
 postgresql_shop_support_password: "{{ lookup('ansible.builtin.password', playbook_dir ~ '/credentials/postgresql_shop_support_password', length=24, chars=['ascii_letters', 'digits']) }}"
 
 # Size of the generated shop data (schema/shop): 1 = about 1.5-2 GB. Used only when the data is first generated.

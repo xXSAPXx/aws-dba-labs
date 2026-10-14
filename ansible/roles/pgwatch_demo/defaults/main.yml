@@ -1,0 +1,39 @@
+---
+# pgwatch (https://pgwat.ch), tried out next to PMM and separate from it: CYBERTEC's all-in-one demo image.
+# One container holds the pgwatch collector with its web UI, its own PostgreSQL for configuration and
+# measurements, and its own Grafana with pgwatch's dashboards. For trying it out, not for keeping.
+# Not v6.0.0: its built-in PostgreSQL 19 preloads timescaledb, which that image does not contain, so it
+# never starts ("could not access file \"timescaledb\"", tested 2026-10-14).
+pgwatch_demo_image: cybertecpostgresql/pgwatch-demo:5.3.0
+pgwatch_demo_container_name: pgwatch-demo
+# Where the demo writes its Grafana data source (fixed by the role, see tasks).
+pgwatch_demo_datasource_file: /etc/grafana/provisioning/datasources/pg_ds.yml
+
+# Published on 127.0.0.1 only: reach them through an SSH tunnel (lab README).
+pgwatch_demo_grafana_port: 3000
+pgwatch_demo_web_port: 8080
+
+# Logins. Without them, the demo's Grafana lets anyone view and its web UI lets anyone change the configuration.
+pgwatch_demo_grafana_password: "" # Grafana user: admin. Set by the lab, required.
+pgwatch_demo_web_user: admin
+pgwatch_demo_web_password: "" # set by the lab, required
+
+# Connections pgwatch opens at most per database it monitors (pgwatch's default: 4). It multiplies with the
+# databases: 30 databases at 4 each would be 120 connections. The monitoring user's connection limit on the
+# server has to allow databases x this, plus a few.
+pgwatch_demo_connections_per_db: 2
+
+# What to monitor, set by the lab. Each entry is added through pgwatch's REST API, if it isn't there yet.
+#   - name: postgresql-source                    # the name pgwatch shows
+#     kind: postgres-continuous-discovery        # every database of the server, also ones created later.
+#                                                # Each shows as <name>_<database>. kind postgres: one database.
+#     host: postgresql-source                    # name in the connection string
+#     address: 10.0.0.5                          # its IP: the container doesn't see the server's /etc/hosts
+#     dbname: postgres                           # the database it connects to first
+#     user: pgwatch
+#     password: "..."
+#     presets: [exhaustive, recommendations]     # pgwatch's sets of metrics, added together
+#     exclude: [stat_statements]                 # metrics left out (ones that can only fail on this server)
+#     include: ""                                # discovery: only databases matching this regex ("" = all)
+#     exclude_databases: ""                      # discovery: no databases matching this regex
+pgwatch_demo_sources: []
