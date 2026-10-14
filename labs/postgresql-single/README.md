@@ -7,12 +7,13 @@ A single Percona PostgreSQL 17 server in a private subnet, monitored by PMM 3. U
 - **VPC** `10.0.0.0/24`: one public subnet, two private subnets in two availability zones, and a NAT gateway.
 - **postgresql-source**: Percona PostgreSQL 17 with pg_stat_monitor, pgAudit and data checksums, in private subnet 1. Its data lives on a separate encrypted gp3 volume (20 GB by default, mounted at `/var/lib/pgsql`). The configuration is sized from the server's RAM and CPUs (`conf.d/01-lab.conf`, every setting commented), and `pg_hba.conf` lets each user reach only its own database, only from the PMM server.
 - **pmm-server**: PMM 3 (Docker) in the public subnet, also the SSH jump host and the application side: the labapp probe and shop workload, and the load tools (psql, pgbench). SSH and the PMM UI accept connections only from your `admin_cidr`.
+- **Backup bucket** for pgBackRest, destroyed with the lab, and an IAM role for `postgresql-source` to use it: see [Backups: the S3 bucket](#backups-the-s3-bucket).
 
 Both servers run Rocky Linux 10 (the newest official image at deploy time): PostgreSQL on a t3.small, the PMM server on a t3.medium because it also generates the load. Change them with `postgresql_instance_type` and `pmm_instance_type` in `terraform.tfvars`; Rocky Linux 10 needs a current type such as t3 or m7i, not t2.
 
 t3 instances are burstable: each may use 20% of its vCPUs continuously and more in bursts, paid for with CPU credits, and a new one starts with none. The lab runs them in `unlimited` mode, so they are never throttled and CPU above the 20% is billed instead. With `cpu_credits = "standard"` in `terraform.tfvars` the price is fixed, but a server without credits is throttled, which looks like a slow database or a slow application in PMM. For heavy load tests, use a non-burstable type for PostgreSQL such as `m7i.large`.
 
-**Cost:** about $0.12 per hour in us-east-1 while the lab runs (NAT gateway $0.045, t3.medium $0.042, t3.small $0.021, two public IPs $0.010, 50 GB of gp3 disks $0.005). CPU above the t3 baseline adds about a cent per hour with the default workload, and at most $0.16 per hour if both servers run flat out. Always run `terraform destroy` when you're done.
+**Cost:** about $0.12 per hour in us-east-1 while the lab runs (NAT gateway $0.045, t3.medium $0.042, t3.small $0.021, two public IPs $0.010, 50 GB of gp3 disks $0.005). CPU above the t3 baseline adds about a cent per hour with the default workload, and at most $0.16 per hour if both servers run flat out. Backups in the S3 bucket cost $0.023 per GB-month: cents for a lab session. Always run `terraform destroy` when you're done.
 
 Terraform (`terraform/`) builds the infrastructure. Ansible (`ansible/`) installs and configures everything on the servers; [how the Ansible part works](../../ansible/README.md).
 
@@ -246,6 +247,29 @@ The `grep` runs in a root shell because only `postgres` and root can read the lo
 - **A `DROP` writes one line for every object that goes with it.** `DROP TABLE shop.orders CASCADE` leaves 59 lines: the table, its sequence, 5 indexes, 12 constraints, 4 column defaults and the 36 internal triggers of its foreign keys. The table's own line is the one with `DROP TABLE,TABLE,`.
 - **A refused statement gets no audit line, but it is still in the log.** When a user lacks the permission (`must be owner`, `permission denied`), PostgreSQL itself logs the error and, on the next line, the full statement with the user, application and client address. That covers every refused command, `TRUNCATE` and `pg_terminate_backend()` included. Find them with `grep -B1 STATEMENT:` or by the error text.
 - **A failed `CREATE ROLE ... PASSWORD` puts the password in the log.** pgAudit hides passwords in its own lines, but the error line above carries the statement as it was typed. Set passwords with `\password` in psql, which sends only the hash.
+
+## Backups: the S3 bucket
+
+Terraform creates an S3 bucket for pgBackRest and gives `postgresql-source` an IAM role to use it. Setting up pgBackRest is yours to do: the role is all the server needs, with no keys on it. The values for its configuration come from `terraform output`:
+
+| pgBackRest setting | Value |
+|---|---|
+| `repo1-type` | `s3` |
+| `repo1-s3-bucket` | `terraform output backup_bucket` (`aws-postgresql-lab-postgresql-single-<account id>`) |
+| `repo1-s3-region` | `us-east-1` |
+| `repo1-s3-endpoint` | `s3.us-east-1.amazonaws.com` |
+| `repo1-s3-key-type` | `auto`: the credentials come from the server's IAM role |
+| `repo1-path` | a folder below `/pgbackrest`, one per cluster, e.g. `/pgbackrest/postgresql-single` |
+| `repo1-retention-full-type`, `repo1-retention-full` | `time` and `7`: any moment of the last 7 days stays restorable |
+
+How the bucket is set up, and why:
+
+- **Private and encrypted:** Block Public Access fully on, ACLs off, SSE-S3 encryption. The bucket policy refuses requests without TLS and anyone outside the AWS account.
+- **The server can reach it only from the VPC:** its role may list, read, write and delete in `pgbackrest/` and nowhere else, and only through the VPC's S3 gateway endpoint. Backup traffic doesn't go through the NAT gateway, which charges per GB. Your own admin user is not limited to the VPC, so the console, the AWS CLI and `terraform destroy` work from your machine.
+- **pgBackRest decides what to keep, never S3.** pgBackRest's retention deletes whole backups together with the WAL they need. An S3 rule that deleted files by age would break the repository: its control file `archive.info` is written once and stays old, and newer backups point to files of older ones. With `archive.info` gone, every WAL upload fails and `pg_wal` fills the disk.
+- **Versioning as a safety net:** whatever pgBackRest deletes or overwrites stays recoverable as an older version for 7 days, then S3 removes it. Unfinished uploads are aborted after a day.
+- **Destroyed with the lab:** `terraform destroy` deletes every object and version, then the bucket. No Object Lock, which would keep the bucket after the lab is gone.
+- **Not for production as is:** a second copy (another region or AWS account), Object Lock against deletion, and pgBackRest's own encryption (`repo1-cipher-type`) belong there.
 
 ## Reset the shop database
 

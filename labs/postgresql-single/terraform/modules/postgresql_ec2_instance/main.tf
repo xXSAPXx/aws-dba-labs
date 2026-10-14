@@ -54,7 +54,7 @@ resource "aws_instance" "postgresql_ec2_instance" {
   subnet_id              = var.subnet_id
   vpc_security_group_ids = [aws_security_group.postgresql_ec2_instance_sg.id]
   key_name               = var.key_name
-  #iam_instance_profile  = var.iam_instance_profile
+  iam_instance_profile   = var.iam_instance_profile
 
   # Burstable types (t3...): "unlimited" never throttles and bills CPU above the baseline, "standard"
   # throttles when the CPU credits run out (a t3 starts with none). Other types don't take this setting.

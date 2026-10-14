@@ -150,3 +150,22 @@ resource "aws_route_table_association" "private_rt_assoc_2" {
 }
 
 
+##############################################################################
+# S3 gateway endpoint: S3 traffic from the private subnets (backups) goes straight to S3 instead of
+# through the NAT gateway. The endpoint is free; the NAT gateway charges $0.045 per GB it passes.
+##############################################################################
+
+data "aws_region" "current" {}
+
+resource "aws_vpc_endpoint" "s3" {
+  vpc_id            = aws_vpc.vpc.id
+  service_name      = "com.amazonaws.${data.aws_region.current.name}.s3"
+  vpc_endpoint_type = "Gateway"
+  route_table_ids   = [aws_route_table.private_rt.id]
+
+  tags = {
+    Name = "${var.name}-s3-endpoint"
+  }
+}
+
+

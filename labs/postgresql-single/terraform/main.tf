@@ -55,6 +55,28 @@ module "vpc" {
 }
 
 
+# Backups: S3 bucket for pgBackRest, and the database server's IAM role
+# (one bucket per lab, destroyed with it; the server reaches it only through the VPC's S3 endpoint)
+######################################################################################
+
+data "aws_caller_identity" "current" {}
+
+module "backup_bucket" {
+  source = "../../../modules/s3_for_backups"
+
+  bucket_name = "aws-postgresql-lab-postgresql-single-${data.aws_caller_identity.current.account_id}"
+}
+
+module "postgresql_role" {
+  source = "../../../modules/iam_roles"
+
+  name              = "postgresql-single-db-server"
+  backup_bucket_arn = module.backup_bucket.bucket_arn
+  backup_prefix     = "pgbackrest"
+  s3_endpoint_id    = module.vpc.s3_endpoint_id
+}
+
+
 # Create the EC2: (PostgreSQL Database)
 ######################################################################################
 module "postgresql_ec2_instance" {
@@ -72,8 +94,9 @@ module "postgresql_ec2_instance" {
   cpu_credits   = var.cpu_credits
   key_name      = var.aws_key_pair
   subnet_id     = module.vpc.private_subnet_1_id
-  #iam_instance_profile   = module.iam_roles............
-  postgresql_tag_name = "postgresql-source"
+  # Its IAM role: access to the backup bucket (attached and changed without replacing the server)
+  iam_instance_profile = module.postgresql_role.instance_profile_name
+  postgresql_tag_name  = "postgresql-source"
 
   # EBS Volume Settings (root = OS; data = PostgreSQL, mounted at /var/lib/pgsql):
   volume_size      = 10
