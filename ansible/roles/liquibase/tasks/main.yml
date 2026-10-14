@@ -25,6 +25,10 @@
     dest: "{{ liquibase_dir }}/liquibase-{{ liquibase_version }}.tar.gz"
     checksum: "{{ liquibase_checksum }}"
     mode: "0644"
+  register: liquibase_download
+  until: liquibase_download is success
+  retries: 5
+  delay: 10
 
 - name: Unpack Liquibase
   ansible.builtin.unarchive:
@@ -39,6 +43,11 @@
     dest: "{{ liquibase_dir }}/{{ liquibase_version }}/lib/postgresql-{{ liquibase_jdbc_version }}.jar"
     checksum: "{{ liquibase_jdbc_checksum }}"
     mode: "0644"
+  # Maven Central once answered "404 Not Found" for this file for a moment: try again before giving up.
+  register: liquibase_jdbc_download
+  until: liquibase_jdbc_download is success
+  retries: 5
+  delay: 10
 
 - name: Point the "current" link at Liquibase {{ liquibase_version }}
   ansible.builtin.file:
