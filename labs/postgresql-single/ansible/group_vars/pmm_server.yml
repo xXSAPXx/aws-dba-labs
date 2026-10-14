@@ -57,3 +57,13 @@ labapp_workload_dsn:
   support: "host={{ groups['postgresql'][0] }} dbname=shop user=shop_support password={{ postgresql_shop_support_password }}"
   migrator: "host={{ groups['postgresql'][0] }} dbname=shop user=shop_migrator password={{ postgresql_shop_migrator_password }}"
   cdc: "host={{ groups['postgresql'][0] }} dbname=shop user=debezium password={{ postgresql_debezium_password }}"
+
+# pgwatch demo (pgwatch-demo.yml): the databases it monitors.
+pgwatch_demo_sources:
+  - name: "{{ groups['postgresql'][0] }}-shop"
+    host: "{{ groups['postgresql'][0] }}"
+    address: "{{ hostvars[groups['postgresql'][0]]['private_ip'] }}"
+    dbname: shop
+    user: pgwatch
+    password: "{{ postgresql_pgwatch_password }}"
+    preset: exhaustive

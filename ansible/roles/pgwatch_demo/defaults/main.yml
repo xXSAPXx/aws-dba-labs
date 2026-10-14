@@ -1,0 +1,25 @@
+---
+# pgwatch (https://pgwat.ch), tried out next to PMM and separate from it: CYBERTEC's all-in-one demo image.
+# One container holds the pgwatch collector with its web UI, its own PostgreSQL for configuration and
+# measurements, and its own Grafana with pgwatch's dashboards. For trying it out, not for keeping.
+pgwatch_demo_image: cybertecpostgresql/pgwatch-demo:v6.0.0
+pgwatch_demo_container_name: pgwatch-demo
+
+# Published on 127.0.0.1 only: reach them through an SSH tunnel (lab README).
+pgwatch_demo_grafana_port: 3000
+pgwatch_demo_web_port: 8080
+
+# Logins. Without them, the demo's Grafana lets anyone view and its web UI lets anyone change the configuration.
+pgwatch_demo_grafana_password: "" # Grafana user: admin. Set by the lab, required.
+pgwatch_demo_web_user: admin
+pgwatch_demo_web_password: "" # set by the lab, required
+
+# Databases to monitor, set by the lab. Each is added through pgwatch's REST API, if it isn't there yet.
+#   - name: postgresql-source-shop     # the name pgwatch shows
+#     host: postgresql-source          # name in the connection string
+#     address: 10.0.0.5                # its IP: the container doesn't see the server's /etc/hosts
+#     dbname: shop
+#     user: pgwatch
+#     password: "..."
+#     preset: exhaustive               # pgwatch's set of metrics and intervals
+pgwatch_demo_sources: []

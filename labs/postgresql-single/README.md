@@ -188,6 +188,25 @@ It opens from the link at the top of **Lab: Application**. Look at it after you 
 
 How to read it, and how to install the same in another PMM: [PostgreSQL lock blocking](../../ansible/roles/pmm_client/README.md). Switch it off with `pmm_client_lock_blocking_enabled: false`.
 
+## pgwatch, next to PMM: a try-out
+
+[pgwatch](https://pgwat.ch) is CYBERTEC's open-source monitoring for PostgreSQL only (BSD license). It runs SQL queries on a schedule, keeps the results in a PostgreSQL database of its own, and shows them in a Grafana of its own: nothing is shared with PMM. What it has that PMM lacks: schema and privilege changes over time, recommendations (indexes to add or drop, superusers, disabled triggers), bloat estimates, autovacuum and sequence health.
+
+The lab can run CYBERTEC's all-in-one demo image on the PMM server, as a container of its own. It is not part of `site.yml`:
+
+```bash
+cd labs/postgresql-single/ansible
+ansible-playbook pgwatch-demo.yml                              # after site.yml; about 2 minutes
+ssh -L 3000:localhost:3000 -L 8080:localhost:8080 pmm-server   # keep it open while you look
+```
+
+- **Grafana:** http://localhost:3000, user `admin`, password in `ansible/credentials/pgwatch_demo_grafana_password`. Start with the dashboard "Database Overview".
+- **pgwatch's web UI:** http://localhost:8080, user `admin`, password in `ansible/credentials/pgwatch_demo_web_password`. It lists the monitored databases and their metrics, and shows pgwatch's log.
+- **Only through the tunnel:** both listen on the PMM server's localhost, so nothing new is open to the internet.
+- **What it monitors:** the shop database, as the user `pgwatch` (`pg_monitor`, statistics only), with pgwatch's "exhaustive" set of metrics.
+- **Empty on purpose:** the statement panels, because the lab loads `pg_stat_monitor` for PMM and not `pg_stat_statements`; and CPU, memory and disk, which pgwatch reads through Python functions inside PostgreSQL.
+- **A demo:** one container with everything in it, the way CYBERTEC offers it for trying pgwatch out. A lasting setup would run the collector, its database and its Grafana as services of their own.
+
 ## Audit: who changed what
 
 [pgAudit](https://github.com/pgaudit/pgaudit) writes every administrative change to the server log, for every user:

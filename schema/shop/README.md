@@ -25,6 +25,7 @@ Liquibase's own tables are pinned to the `public` schema (`liquibase-schema-name
 | `shop_analytics` | yes | Long-running reports and exports: `SELECT` only, `statement_timeout` 15 min, `work_mem` 64 MB, 5 connections |
 | `shop_batch` | yes | Scheduled batch jobs: `SELECT`, plus `UPDATE` on `inventory` and `carts`, `DELETE` on `carts` and `cart_items`, `INSERT` on `stock_movements`. `statement_timeout` 10 min, 5 connections |
 | `shop_support` | yes | People, not programs: support staff who look up anything and fix customer records by hand. `SELECT`, plus `UPDATE` on `customers` and `customer_addresses`. `statement_timeout` 60 s, 5 connections, and no limit on how long a transaction may stay open |
+| `pgwatch` | yes | The second monitoring, next to PMM ([pgwatch demo](../../labs/postgresql-single/README.md#pgwatch-next-to-pmm-a-try-out)): `pg_monitor` only, which reads statistics and no data. 5 connections |
 | `debezium` | yes | A program: the change data capture connector, which sends the order tables' changes to Kafka. `SELECT` on `orders`, `order_items` and `payments`, and `REPLICATION` to read the WAL through a logical replication slot. 3 connections |
 
 The workload uses each role for its part: the application as `shop_app`, the reports and batch jobs as the next three. `shop_support`, `shop_migrator` and `debezium` are who the [scenarios](../../tools/labapp/README.md#scenarios-incidents-on-demand) play. Grants come from default privileges (`0001-schema-and-access.sql`, `0010-analytics-and-batch-access.sql`, `0011-support-access.sql`), so new tables get them automatically. Only these roles (and `pmm`) can connect to the `shop` database, only from the PMM server.
@@ -50,11 +51,11 @@ Popularity is skewed like real traffic: about 21% of all order lines are for the
 
 ## Migrations: the workflow
 
-1. Add a file in `changes/`, numbered after the last one, e.g. `changes/0013-add-orders-channel.sql`:
+1. Add a file in `changes/`, numbered after the last one, e.g. `changes/0014-add-orders-channel.sql`:
    ```sql
    --liquibase formatted sql
 
-   --changeset yourname:0013-add-orders-channel
+   --changeset yourname:0014-add-orders-channel
    --comment: Where the order came from.
    ALTER TABLE shop.orders ADD COLUMN channel text NOT NULL DEFAULT 'web';
    --rollback ALTER TABLE shop.orders DROP COLUMN channel;

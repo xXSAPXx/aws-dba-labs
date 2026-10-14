@@ -69,9 +69,15 @@ postgresql_app_users:
     password: "{{ postgresql_debezium_password }}"
     role_attr_flags: LOGIN,REPLICATION
     conn_limit: 3
+  # pgwatch (pgwatch-demo.yml), the second monitoring next to PMM: reads statistics only (pg_monitor, below).
+  - name: pgwatch
+    password: "{{ postgresql_pgwatch_password }}"
+    conn_limit: 5
 postgresql_memberships:
   - groups: [shop_owner]
     target_roles: [shop_migrator]
+  - groups: [pg_monitor]
+    target_roles: [pgwatch]
 postgresql_app_databases:
   - name: bench
     owner: bench
@@ -87,3 +93,4 @@ postgresql_hba_rules:
   - { database: labapp, user: labapp, address: "{{ postgresql_pmm_server_address }}" }
   - { database: shop, user: "shop_app,shop_reporting,shop_analytics,shop_batch,shop_support,shop_migrator,debezium", address: "{{ postgresql_pmm_server_address }}" }
   - { database: all, user: dba, address: "{{ postgresql_pmm_server_address }}" }
+  - { database: all, user: pgwatch, address: "{{ postgresql_pmm_server_address }}" } # statistics of every database
