@@ -12,6 +12,7 @@ admin_cidr                 = "203.0.113.10/32"
 # For heavy load tests use a non-burstable type for PostgreSQL, e.g. m7i.large.
 # postgresql_instance_type = "m7i.large"
 # pmm_instance_type        = "t3.medium"
+# pmm_volume_size          = 20            # GB, the PMM server's root disk
 
 # Optional: CPU credit mode of the t3 servers. Default "unlimited": never throttled, CPU above the t3 baseline
 # is billed (about a cent per hour with the default workload). "standard": fixed price, but throttled.
