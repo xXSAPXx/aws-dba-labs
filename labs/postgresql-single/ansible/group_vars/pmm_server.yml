@@ -67,3 +67,11 @@ pgwatch_demo_sources:
     user: pgwatch
     password: "{{ postgresql_pgwatch_password }}"
     preset: exhaustive
+  # The same database again for the "Recommendations" dashboard: its checks are a preset of their own.
+  - name: "{{ groups['postgresql'][0] }}-shop-recommendations"
+    host: "{{ groups['postgresql'][0] }}"
+    address: "{{ hostvars[groups['postgresql'][0]]['private_ip'] }}"
+    dbname: shop
+    user: pgwatch
+    password: "{{ postgresql_pgwatch_password }}"
+    preset: recommendations

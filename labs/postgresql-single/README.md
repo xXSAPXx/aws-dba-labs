@@ -12,7 +12,7 @@ Both servers run Rocky Linux 10 (the newest official image at deploy time): Post
 
 t3 instances are burstable: each may use 20% of its vCPUs continuously and more in bursts, paid for with CPU credits, and a new one starts with none. The lab runs them in `unlimited` mode, so they are never throttled and CPU above the 20% is billed instead. With `cpu_credits = "standard"` in `terraform.tfvars` the price is fixed, but a server without credits is throttled, which looks like a slow database or a slow application in PMM. For heavy load tests, use a non-burstable type for PostgreSQL such as `m7i.large`.
 
-**Cost:** about $0.12 per hour in us-east-1 while the lab runs (NAT gateway $0.045, t3.medium $0.042, t3.small $0.021, two public IPs $0.010, 40 GB of gp3 disks $0.004). CPU above the t3 baseline adds about a cent per hour with the default workload, and at most $0.16 per hour if both servers run flat out. Always run `terraform destroy` when you're done.
+**Cost:** about $0.12 per hour in us-east-1 while the lab runs (NAT gateway $0.045, t3.medium $0.042, t3.small $0.021, two public IPs $0.010, 50 GB of gp3 disks $0.005). CPU above the t3 baseline adds about a cent per hour with the default workload, and at most $0.16 per hour if both servers run flat out. Always run `terraform destroy` when you're done.
 
 Terraform (`terraform/`) builds the infrastructure. Ansible (`ansible/`) installs and configures everything on the servers; [how the Ansible part works](../../ansible/README.md).
 
@@ -196,15 +196,21 @@ The lab can run CYBERTEC's all-in-one demo image on the PMM server, as a contain
 
 ```bash
 cd labs/postgresql-single/ansible
-ansible-playbook pgwatch-demo.yml                              # after site.yml; about 2 minutes
+ansible-playbook pgwatch-demo.yml                              # after site.yml; about 1 minute
 ssh -L 3000:localhost:3000 -L 8080:localhost:8080 pmm-server   # keep it open while you look
 ```
 
-- **Grafana:** http://localhost:3000, user `admin`, password in `ansible/credentials/pgwatch_demo_grafana_password`. Start with the dashboard "Database Overview".
+- **Grafana:** http://localhost:3000, user `admin`, password in `ansible/credentials/pgwatch_demo_grafana_password`. Start with "0. Health Check" and "2. Database Overview": 22 dashboards in all, data after 2 to 3 minutes.
 - **pgwatch's web UI:** http://localhost:8080, user `admin`, password in `ansible/credentials/pgwatch_demo_web_password`. It lists the monitored databases and their metrics, and shows pgwatch's log.
 - **Only through the tunnel:** both listen on the PMM server's localhost, so nothing new is open to the internet.
-- **What it monitors:** the shop database, as the user `pgwatch` (`pg_monitor`, statistics only), with pgwatch's "exhaustive" set of metrics.
-- **Empty on purpose:** the statement panels, because the lab loads `pg_stat_monitor` for PMM and not `pg_stat_statements`; and CPU, memory and disk, which pgwatch reads through Python functions inside PostgreSQL.
+- **What it monitors:** the shop database, as the user `pgwatch` (`pg_monitor`, statistics only), with pgwatch's "exhaustive" set of metrics. A second entry for the same database, `postgresql-source-shop-recommendations`, runs the checks of the "Recommendations" dashboard: pick it there.
+- **Empty on purpose:**
+  - The statement dashboards ("3. Query Performance Analysis", "Single query details"): the lab loads `pg_stat_monitor` for PMM and not `pg_stat_statements`. pgwatch's log shows that as an error every few minutes.
+  - "System Stats": CPU, memory and disk come from Python functions inside PostgreSQL.
+  - "Server Log Events": pgwatch reads the log only when it runs on the database server.
+  - "PgBouncer stats", "Pgpool Stats", "Replication": the lab has none of these.
+- **Version 5.3.0, not the newest:** the 6.0.0 demo image cannot start its own PostgreSQL (it preloads TimescaleDB, which that image lacks).
+- **What it costs the PMM server:** about 470 MB of memory and 2.2 GB of disk for the image.
 - **A demo:** one container with everything in it, the way CYBERTEC offers it for trying pgwatch out. A lasting setup would run the collector, its database and its Grafana as services of their own.
 
 ## Audit: who changed what

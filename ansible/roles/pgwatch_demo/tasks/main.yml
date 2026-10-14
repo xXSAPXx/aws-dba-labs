@@ -95,6 +95,7 @@
   loop: "{{ pgwatch_demo_sources }}"
   loop_control:
     label: "{{ item.name }}"
-  when: item.name not in (pgwatch_demo_existing.json | default([]) | map(attribute='Name') | list)
+  # pgwatch sends the list as text/plain, so Ansible does not parse it by itself.
+  when: item.name not in (pgwatch_demo_existing.content | from_json | map(attribute='Name') | list)
   changed_when: true
   no_log: true # the connection string contains the password
