@@ -6,6 +6,8 @@
 # never starts ("could not access file \"timescaledb\"", tested 2026-10-14).
 pgwatch_demo_image: cybertecpostgresql/pgwatch-demo:5.3.0
 pgwatch_demo_container_name: pgwatch-demo
+# Where the demo writes its Grafana data source (fixed by the role, see tasks).
+pgwatch_demo_datasource_file: /etc/grafana/provisioning/datasources/pg_ds.yml
 
 # Published on 127.0.0.1 only: reach them through an SSH tunnel (lab README).
 pgwatch_demo_grafana_port: 3000

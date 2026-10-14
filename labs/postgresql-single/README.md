@@ -210,6 +210,7 @@ ssh -L 3000:localhost:3000 -L 8080:localhost:8080 pmm-server   # keep it open wh
   - "Server Log Events": pgwatch reads the log only when it runs on the database server.
   - "PgBouncer stats", "Pgpool Stats", "Replication": the lab has none of these.
 - **Version 5.3.0, not the newest:** the 6.0.0 demo image cannot start its own PostgreSQL (it preloads TimescaleDB, which that image lacks).
+- **A fix the playbook applies to the demo's Grafana:** the image defines its data source with the database name where Grafana 12 no longer looks. Without the fix every panel shows N/A, and Explore says "You do not currently have a default database configured for this data source". If the container is ever restarted, run `pgwatch-demo.yml` again.
 - **What it costs the PMM server:** about 470 MB of memory and 2.2 GB of disk for the image.
 - **A demo:** one container with everything in it, the way CYBERTEC offers it for trying pgwatch out. A lasting setup would run the collector, its database and its Grafana as services of their own.
 
