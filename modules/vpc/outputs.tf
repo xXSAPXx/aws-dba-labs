@@ -29,3 +29,8 @@ output "private_subnet_2_id" {
   description = "The ID of private subnet 2 (availability_zone_2)."
   value       = aws_subnet.private_subnet_2.id
 }
+
+output "s3_endpoint_id" {
+  description = "The ID of the S3 gateway endpoint (private subnets). IAM policies can require it (aws:SourceVpce)."
+  value       = aws_vpc_endpoint.s3.id
+}

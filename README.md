@@ -22,10 +22,10 @@ Hands-on database labs on AWS that simulate a production environment. Each lab i
 
 ```
 modules/              Shared Terraform modules, used by every lab
-  vpc/                VPC, public + private subnets, NAT gateway, routing
+  vpc/                VPC, public + private subnets, NAT gateway, routing, S3 gateway endpoint
   pmm_server/         PMM 3 server instance, also the SSH jump host
-  iam_roles/          (placeholder)
-  s3_for_backups/     (placeholder)
+  iam_roles/          A database server's IAM role (instance profile): its folder of the backup bucket
+  s3_for_backups/     S3 bucket for backups: versioned, encrypted, private, TLS only
 ansible/roles/        Shared Ansible roles, used by every lab (how it works: ansible/README.md)
   common/             Hostname, /etc/hosts, EPEL, admin tools
   data_volume/        Formats and mounts a database server's EBS data volume

@@ -57,10 +57,11 @@ variable "key_name" {
   type        = string
 }
 
-#variable "iam_instance_profile" {
-#  description = "IAM Role for the Prometheus Automatic Service Discovery"
-#  type        = string
-#}
+variable "iam_instance_profile" {
+  description = "Instance profile (IAM role) of the server, e.g. its access to the backup bucket. null: none"
+  type        = string
+  default     = null
+}
 
 variable "volume_size" {
   description = "Root (OS) EBS Volume GBs Size"
