@@ -32,6 +32,9 @@ labapp_metrics_host: "{{ private_ip }}"
 
 labapp_workload_enabled: true
 labapp_workload_rate: 100 # base requests per second (live: labapp load rate N)
+# Percent of checkouts done in the database by shop.place_order() (tx checkout_db) instead of in the
+# application (tx checkout), to compare the two side by side (live: labapp load checkout-in-db N).
+labapp_workload_checkout_in_database: 50
 labapp_workload_workers: 24 # connections as shop_app
 labapp_workload_metrics_port: 9302
 labapp_workload_control_port: 9301 # 127.0.0.1 only, used by `labapp load`
@@ -50,7 +53,7 @@ labapp_workload_jobs:
   sales_dashboard: { every: 120, first: 60, target: 30 } # ~30 s, shop_reporting
   lifetime_value_export: { every: 300, first: 150, target: 60 } # ~1 min slow cursor, shop_analytics
   bi_extract: { every: 900, first: 420, target: 300 } # ~5 min REPEATABLE READ, shop_analytics
-  cart_cleanup: { every: 600, first: 300 } # bulk UPDATE + DELETE, shop_batch
+  cart_cleanup: { every: 600, first: 300, batch_size: 5000 } # CALL shop.cleanup_carts(): a commit per batch, shop_batch
   restock: { every: 900, first: 450 } # shop_batch
   stock_recount: { every: 1200, first: 600, target: 90, mode: single_transaction } # or: batched
 

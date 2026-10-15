@@ -1,7 +1,8 @@
 # Liquibase master changelog of the shop database.
-# Applies every file in changes/ in name order: 0001-... schema, 1001-... data (context "data").
+# Applies every file in changes/ in name order: 0001-... schema, 1001-... data (context "data"),
+# 2001-... database code (functions, procedures, triggers), after the data so no trigger fires during its load.
 # Each change is a "formatted SQL" changeset; Liquibase records what ran in DATABASECHANGELOG.
-# A new migration = a new file, e.g. changes/0010-add-orders-channel.sql, then: ansible-playbook migrate.yml
+# A new migration = a new file, e.g. changes/0014-add-orders-channel.sql, then: ansible-playbook migrate.yml
 databaseChangeLog:
   - includeAll:
       path: changes/

@@ -42,7 +42,8 @@ The `labapp-workload` service plays the shop's users, reporting tools and batch 
 | `cart` | 15% | Adds a product to the customer's open cart, or to a new one (20% are guests) |
 | `category` | 14% | A page of a category's products, sorted by price |
 | `login` | 10% | Finds the customer by email, updates `last_seen_at`, writes `audit_log` |
-| `checkout` | 8% | Takes 1–3 products off the stock, then inserts the order, its lines, stock movements, payment and status history, closes the cart and writes `audit_log`, in one transaction. No stock left: rolled back as `out_of_stock` (a business outcome, not an error) |
+| `checkout` | 8% | Takes 1–3 products off the stock, then inserts the order, its lines, stock movements and payment, closes the cart and writes `audit_log`, in one transaction of about ten statements. No stock left: rolled back as `out_of_stock` (a business outcome, not an error) |
+| `checkout_db` | half of the checkouts | The same checkout in one call: `SELECT shop.place_order(...)`, and the database does the rest. No explicit transaction: in autocommit the call is a transaction of its own. Out of stock: error code `SH001`, counted as `out_of_stock` |
 | `payment` | 8% | Takes the oldest pending payment (`FOR UPDATE SKIP LOCKED`): captured, so the order is paid and invoiced, or 3% declined, so the order is cancelled |
 | `order_history` | 6% | The customer's last 10 orders |
 | `shipping` | 5% | Ships the oldest paid order, or delivers the oldest shipment in transit |
@@ -51,6 +52,10 @@ The `labapp-workload` service plays the shop's users, reporting tools and batch 
 Traffic is skewed like the generated data: a few products and customers get most of it. During a flash sale, 70% of the products picked are the 20 hot ones, so their `inventory` rows become hot rows.
 
 `checkout` locks the stock rows in the order the customer added the products, not sorted, like many real applications: two checkouts of the same products can deadlock. Deadlocks and serialization failures are retried once.
+
+**The checkout in the application or in the database.** `labapp_workload_checkout_in_database` (default 50) is the percent of checkout requests done by the database function `shop.place_order()` ([database code](../../schema/shop/README.md#database-code-triggers-a-function-a-procedure)). They are counted as `checkout_db`, so the dashboard shows both side by side: response time, results, lock timeouts. Both take the stock rows in the same order. The function holds them for one round trip instead of about ten. Change the share live with `labapp load checkout-in-db 100` (or `0`).
+
+The status history and `updated_at` are written by the database's triggers, whichever way the checkout runs, and also for payment and shipping.
 
 Each finished request is counted with one result:
 
@@ -76,7 +81,7 @@ Each job has its own connection and role, and runs on its own schedule. A job ne
 | `sales_dashboard` | `shop_reporting` | every 2 min, ~30 s | Revenue per day and category over 90 days, ranked | One long statement |
 | `lifetime_value_export` | `shop_analytics` | every 5 min, ~1 min | Every customer's lifetime value, read through a cursor in batches of 5,000 with pauses in between (a slow client) | A transaction open for the whole export |
 | `bi_extract` | `shop_analytics` | every 15 min, ~5 min | Five reports in one `REPEATABLE READ` transaction | One snapshot held for 5 minutes, which holds back vacuum on every table |
-| `cart_cleanup` | `shop_batch` | every 10 min | Marks carts idle for 30 minutes as abandoned, deletes old ones | Bulk `UPDATE` and `DELETE`: dead rows, bloat |
+| `cart_cleanup` | `shop_batch` | every 10 min | Marks carts idle for 30 minutes as abandoned and deletes old ones: `CALL shop.cleanup_carts(5000, 0, 0)`, a procedure that commits after each batch of 5,000 | Dead rows, bloat; locks held for one batch at a time |
 | `restock` | `shop_batch` | every 15 min | Adds 500 to every stock row below 50, with ledger rows | A bulk `UPDATE` of `inventory` |
 | `stock_recount` | `shop_batch` | every 20 min, ~90 s | Locks every stock row and recounts it against the ledger, in one transaction | All of `inventory` locked for 90 s: checkouts fail with `lock_timeout` |
 
@@ -178,6 +183,7 @@ labapp load rate 60             # base rate: 60 requests per second
 labapp load pause               # stop sending requests (reports and batch jobs keep their schedule)
 labapp load resume
 labapp load flash-sale 300      # a 5-minute flash sale, now
+labapp load checkout-in-db 100  # every checkout through shop.place_order() in the database (0: none)
 labapp load run stock_recount   # run a report or batch job now
 labapp scenario list            # incidents on demand, see above
 journalctl -u labapp-workload -f
@@ -216,11 +222,12 @@ The role's defaults (`ansible/roles/labapp/defaults/main.yml`), overridable in t
 |---|---|---|
 | `labapp_workload_enabled` | `true` | `false` runs only the probe |
 | `labapp_workload_rate` | `100` | Base requests per second |
+| `labapp_workload_checkout_in_database` | `50` | Percent of checkouts done by `shop.place_order()` in the database (`checkout_db`) |
 | `labapp_workload_workers` | `24` | Connections as `shop_app` |
 | `labapp_workload_mix` | the shares above | Transaction weights, e.g. `{product_page: 50, checkout: 20, ...}` |
 | `labapp_workload_wave` | `{period: 3600, amplitude: 0.4}` | The traffic cycle |
 | `labapp_workload_flash_sale` | every 30 min, first at 20, 3 min, 3× | |
-| `labapp_workload_jobs` | the schedule above | `every`, `first` and `target` in seconds; `stock_recount` also takes `mode` |
+| `labapp_workload_jobs` | the schedule above | `every`, `first` and `target` in seconds; `stock_recount` also takes `mode`, `cart_cleanup` `batch_size` |
 | `labapp_workload_scenarios` | 10 min and 5 min | `seconds` each scenario runs before it ends by itself; `forgotten_transaction` also takes `customers` |
 
 ## Metrics

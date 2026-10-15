@@ -6,7 +6,7 @@ Commands:
   labapp outages [--log FILE] [--last N]
                                       List the outages the probe measured.
   labapp workload --config FILE       Run the shop workload (the labapp-workload service), see workload.py.
-  labapp load status | rate N | pause | resume | flash-sale [SECONDS] | run JOB
+  labapp load status | rate N | pause | resume | flash-sale [SECONDS] | checkout-in-db PERCENT | run JOB
                                       Control the running workload.
   labapp scenario list | run NAME [--seconds N] [--confirm TABLE] | status | stop [NAME]
                                       Incidents on demand for DBA drills, see scenarios.py.
@@ -294,9 +294,10 @@ def cmd_load(args):
         "pause": "/pause",
         "resume": "/resume",
         "flash-sale": f"/flash-sale/{args.value or ''}".rstrip("/"),
+        "checkout-in-db": f"/checkout-in-db/{args.value}",
         "run": f"/run/{args.value}",
     }[args.action]
-    if args.action in ("rate", "run") and not args.value:
+    if args.action in ("rate", "checkout-in-db", "run") and not args.value:
         sys.exit(f"labapp load {args.action} needs a value")
     method = "GET" if args.action == "status" else "POST"
     try:
@@ -379,8 +380,9 @@ def main():
     work.set_defaults(func=cmd_workload)
 
     load = sub.add_parser("load", help="control the running workload")
-    load.add_argument("action", choices=["status", "rate", "pause", "resume", "flash-sale", "run"])
-    load.add_argument("value", nargs="?", help="rate: requests per second; flash-sale: seconds; run: job name")
+    load.add_argument("action", choices=["status", "rate", "pause", "resume", "flash-sale", "checkout-in-db", "run"])
+    load.add_argument("value", nargs="?", help="rate: requests per second; flash-sale: seconds; "
+                      "checkout-in-db: percent of checkouts done by shop.place_order() in the database; run: job name")
     load.add_argument("--url", default=DEFAULT_CONTROL_URL, help=f"control endpoint (default: {DEFAULT_CONTROL_URL})")
     load.set_defaults(func=cmd_load)
 
