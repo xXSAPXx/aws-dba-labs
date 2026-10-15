@@ -81,6 +81,23 @@ Rules, as in production:
 - **`CREATE INDEX CONCURRENTLY` / `DROP INDEX CONCURRENTLY` can't run in a transaction:** add `runInTransaction:false` to the changeset line.
 - **A migration that can't get its lock within 5 s fails** (`lock_timeout` of `shop_migrator`) instead of queueing and blocking the application behind it. Retry it, or find what holds the lock.
 
+## Database code: triggers, a function, a procedure
+
+Part of the shop's logic runs in the database (migrations `2001` to `2004`). They are numbered after the data (`1xxx`), so a new lab loads its generated data before any trigger exists: a trigger during the load would rewrite the generated timestamps and history.
+
+| Object | Kind | What it does | Used by |
+|---|---|---|---|
+| `shop.set_updated_at()` | Trigger, `BEFORE UPDATE`, on `orders`, `payments`, `carts` and `inventory` | Sets `updated_at` on every update of a row, whoever runs it | Every update. `inventory` is the hottest table: every checkout pays for this trigger |
+| `shop.record_order_status()` | Trigger, `AFTER INSERT OR UPDATE OF status`, on `orders` | Writes `order_status_history`: one row per status an order gets | Checkout, payment, shipping |
+| `shop.place_order(customer, warehouse, items, method, provider_ref)` | Function | The whole checkout in one call: stock, order, lines, stock movements, payment, cart, audit log. Out of stock raises error code `SH001` and rolls everything back | The workload's `checkout_db`, a share of the checkouts |
+| `shop.cleanup_carts(batch_size)` | Procedure | Abandons idle carts and deletes old ones, with a commit after each batch | The workload's `cart_cleanup` job |
+
+- **Code changesets run on change** (`runOnChange:true`): edit the code in its file, and the next `migrate.yml` deploys the new version with `CREATE OR REPLACE`. That is the one exception to "never edit an applied changeset" below. A function body contains semicolons, so those changesets also carry `splitStatements:false` and hold one statement each.
+- **Who may call them:** functions and procedures can be called by everyone (`PUBLIC`) until that is revoked. `place_order` is for `shop_app` only, `cleanup_carts` for `shop_batch` only. Both run with the caller's rights (`SECURITY INVOKER`, the default).
+- **A procedure that commits must be called outside a transaction block:** `CALL shop.cleanup_carts(5000, 0, 0)` in autocommit, never after a `BEGIN`.
+- **Where to see them:** `\df shop.*` lists the functions and procedures, `\d shop.orders` the table's triggers. `pg_stat_user_functions` has calls, total and own time per function (`track_functions = 'pl'`).
+- **Query Analytics shows the call, not what's inside.** `SELECT shop.place_order(...)` is one statement there. The statements inside appear only with `pg_stat_monitor.pgsm_track = 'all'` (default `top`), for example `ALTER ROLE shop_app SET pg_stat_monitor.pgsm_track = 'all'` and a restart of the workload so its sessions reconnect.
+
 ## Exercises: the built-in flaws
 
 The schema is mostly clean, with six typical production problems built in on purpose. Find them with PMM, pg_activity and the catalog, then fix them with migrations while the workload runs, without downtime on the dashboard.

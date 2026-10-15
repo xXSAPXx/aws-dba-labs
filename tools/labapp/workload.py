@@ -78,6 +78,8 @@ class Metrics:
         self.target_rate = Gauge("labapp_load_target_rate", "Current target rate: base x wave x flash sale")
         self.flash_sale = Gauge("labapp_load_flash_sale", "1 during a flash sale")
         self.paused = Gauge("labapp_load_paused", "1 while the workload is paused")
+        self.checkout_in_database = Gauge(
+            "labapp_load_checkout_in_database_percent", "Share of checkouts done by shop.place_order() in the database")
         # The label is job_name, not job: Prometheus keeps "job" for the scrape and would rename ours to exported_job.
         self.job_active = Gauge("labapp_job_active", "1 while a long-running report or batch job runs", ["job_name"])
         self.job_runs = Counter("labapp_job_runs", "Report and batch job runs by result", ["job_name", "result"])
@@ -173,19 +175,28 @@ def tx_cart(conn, shop, flash):
         conn.execute("UPDATE shop.carts SET updated_at = now() WHERE id = %s", (cart_id,))
 
 
-def tx_checkout(conn, shop, flash):
-    customer = shop.customer()
+def checkout_request(shop, flash):
+    """What a customer orders: 1 to 3 products, in the order they were added to the cart, from one warehouse."""
     items = {}
     for _ in range(random.choice([1, 1, 2, 2, 3])):
         items[shop.product(flash)] = random.randint(1, 2)
-    warehouse = random.choice(shop.warehouses)
+    return shop.customer(), items, random.choice(shop.warehouses)
+
+
+# The database code (schema/shop/changes/2xxx) keeps updated_at and the order history: the triggers set
+# updated_at on every UPDATE of orders, payments, carts and inventory, and write order_status_history whenever
+# an order's status changes. The transactions below no longer do either.
+
+def tx_checkout(conn, shop, flash):
+    """The checkout in the application: about ten statements, each a round trip, in one transaction."""
+    customer, items, warehouse = checkout_request(shop, flash)
     with conn.transaction():
         prices = dict(conn.execute("SELECT id, price FROM shop.products WHERE id = ANY(%s)", (list(items),)).fetchall())
         # Stock rows are locked in the order the customer added the products (not sorted), like many real
         # applications: two checkouts of the same products in a different order can deadlock.
         for pid, qty in items.items():
             if conn.execute(
-                """UPDATE shop.inventory SET quantity = quantity - %s, updated_at = now()
+                """UPDATE shop.inventory SET quantity = quantity - %s
                    WHERE warehouse_id = %s AND product_id = %s AND quantity >= %s RETURNING quantity""",
                 (qty, warehouse, pid, qty),
             ).fetchone() is None:
@@ -212,18 +223,34 @@ def tx_checkout(conn, shop, flash):
             (order_id, total, random.choice(PAYMENT_METHODS), f"PSP-{uuid.uuid4().hex[:16]}"),
         )
         conn.execute(
-            "INSERT INTO shop.order_status_history (order_id, from_status, to_status) VALUES (%s, NULL, 'pending')",
-            (order_id,),
-        )
-        conn.execute(
-            "UPDATE shop.carts SET status = 'converted', updated_at = now() WHERE customer_id = %s AND status = 'open'",
-            (customer,),
+            "UPDATE shop.carts SET status = 'converted' WHERE customer_id = %s AND status = 'open'", (customer,)
         )
         conn.execute(
             """INSERT INTO shop.audit_log (actor, action, entity, entity_id, details)
                VALUES (%s, 'checkout', 'order', %s, %s)""",
             (f"customer:{customer}", order_id, Jsonb({"items": len(items), "total": str(total)})),
         )
+
+
+OUT_OF_STOCK = "SH001"  # the error code shop.place_order() raises when a product is out of stock
+
+
+def tx_checkout_db(conn, shop, flash):
+    """The same checkout in one call: shop.place_order() does it in the database (2003-place-order.sql).
+
+    One round trip, and no explicit transaction: in autocommit, the call is a transaction of its own.
+    """
+    customer, items, warehouse = checkout_request(shop, flash)
+    try:
+        conn.execute(
+            "SELECT shop.place_order(%s::integer, %s::smallint, %s::jsonb, %s, %s)",
+            (customer, warehouse, Jsonb([{"product_id": p, "quantity": q} for p, q in items.items()]),
+             random.choice(PAYMENT_METHODS), f"PSP-{uuid.uuid4().hex[:16]}"),
+        ).fetchone()
+    except Exception as exc:
+        if getattr(exc, "sqlstate", None) == OUT_OF_STOCK:
+            raise OutOfStock() from None
+        raise
 
 
 def tx_payment(conn, shop, flash):
@@ -235,21 +262,11 @@ def tx_payment(conn, shop, flash):
             return
         payment_id, order_id = row
         if random.random() < 0.03:  # declined by the payment provider
-            conn.execute("UPDATE shop.payments SET status = 'failed', updated_at = now() WHERE id = %s", (payment_id,))
-            conn.execute("UPDATE shop.orders SET status = 'cancelled', updated_at = now() WHERE id = %s", (order_id,))
-            conn.execute(
-                "INSERT INTO shop.order_status_history (order_id, from_status, to_status) VALUES (%s, 'pending', 'cancelled')",
-                (order_id,),
-            )
+            conn.execute("UPDATE shop.payments SET status = 'failed' WHERE id = %s", (payment_id,))
+            conn.execute("UPDATE shop.orders SET status = 'cancelled' WHERE id = %s", (order_id,))
             return
-        conn.execute("UPDATE shop.payments SET status = 'captured', updated_at = now() WHERE id = %s", (payment_id,))
-        conn.execute(
-            "UPDATE shop.orders SET status = 'paid', updated_at = now() WHERE id = %s AND status = 'pending'", (order_id,)
-        )
-        conn.execute(
-            "INSERT INTO shop.order_status_history (order_id, from_status, to_status) VALUES (%s, 'pending', 'paid')",
-            (order_id,),
-        )
+        conn.execute("UPDATE shop.payments SET status = 'captured' WHERE id = %s", (payment_id,))
+        conn.execute("UPDATE shop.orders SET status = 'paid' WHERE id = %s AND status = 'pending'", (order_id,))
         conn.execute(
             """INSERT INTO shop.invoices (order_id, number) VALUES (%s, 'INV-' || to_char(now(), 'YYYY') || '-' || lpad(%s::text, 9, '0'))
                ON CONFLICT (order_id) DO NOTHING""", (order_id, order_id))
@@ -264,11 +281,7 @@ def tx_shipping(conn, shop, flash):
             if row is None:
                 return
             order_id = row[0]
-            conn.execute("UPDATE shop.orders SET status = 'shipped', updated_at = now() WHERE id = %s", (order_id,))
-            conn.execute(
-                "INSERT INTO shop.order_status_history (order_id, from_status, to_status) VALUES (%s, 'paid', 'shipped')",
-                (order_id,),
-            )
+            conn.execute("UPDATE shop.orders SET status = 'shipped' WHERE id = %s", (order_id,))
             shipment_id = conn.execute(
                 """INSERT INTO shop.shipments (order_id, warehouse_id, carrier_id, tracking_number, status, shipped_at)
                    VALUES (%s, %s, %s, %s, 'in_transit', now()) RETURNING id""",
@@ -290,11 +303,7 @@ def tx_shipping(conn, shop, flash):
             conn.execute(
                 "UPDATE shop.shipments SET status = 'delivered', delivered_at = now() WHERE id = %s", (shipment_id,)
             )
-            conn.execute("UPDATE shop.orders SET status = 'delivered', updated_at = now() WHERE id = %s", (order_id,))
-            conn.execute(
-                "INSERT INTO shop.order_status_history (order_id, from_status, to_status) VALUES (%s, 'shipped', 'delivered')",
-                (order_id,),
-            )
+            conn.execute("UPDATE shop.orders SET status = 'delivered' WHERE id = %s", (order_id,))
             conn.execute(
                 "INSERT INTO shop.shipment_events (shipment_id, event, location) VALUES (%s, 'delivered', 'customer')",
                 (shipment_id,),
@@ -330,6 +339,7 @@ TRANSACTIONS = {
     "login": tx_login,
     "cart": tx_cart,
     "checkout": tx_checkout,
+    "checkout_db": tx_checkout_db,  # not in the mix: a share of "checkout" requests (checkout_in_database)
     "payment": tx_payment,
     "shipping": tx_shipping,
     "order_history": tx_order_history,
@@ -497,15 +507,13 @@ class Jobs:
     # ---- batch jobs -----------------------------------------------------------------------------
 
     def cart_cleanup(self, conn, settings):
-        with conn.transaction():
-            abandoned = conn.execute(
-                """UPDATE shop.carts SET status = 'abandoned', updated_at = now()
-                   WHERE status = 'open' AND updated_at < now() - interval '30 minutes'""").rowcount
-        with conn.transaction():
-            deleted = conn.execute(
-                """DELETE FROM shop.carts
-                   WHERE status IN ('abandoned', 'converted') AND updated_at < now() - interval '45 minutes'""").rowcount
-        return f"({abandoned} carts abandoned, {deleted} deleted)"
+        """In the database: shop.cleanup_carts() commits after each batch (2004-cleanup-carts.sql).
+
+        CALL outside a transaction block (the connection is in autocommit), or the procedure can't commit.
+        """
+        batch = int(settings.get("batch_size", 5000))
+        abandoned, deleted = conn.execute("CALL shop.cleanup_carts(%s, 0, 0)", (batch,)).fetchone()
+        return f"({abandoned} carts abandoned, {deleted} deleted, in batches of {batch})"
 
     def stock_recount(self, conn, settings):
         """Recount the stock against the ledger.
@@ -541,7 +549,7 @@ class Jobs:
     def restock(self, conn, settings):
         with conn.transaction():
             rows = conn.execute(
-                """UPDATE shop.inventory SET quantity = quantity + 500, updated_at = now()
+                """UPDATE shop.inventory SET quantity = quantity + 500
                    WHERE quantity < 50 RETURNING warehouse_id, product_id""").fetchall()
             with conn.cursor() as cur:
                 cur.executemany(
@@ -571,6 +579,8 @@ class Load:
         self.tx_names, self.tx_weights = list(mix), list(mix.values())
         self.wave = cfg.get("wave", {"period": 3600, "amplitude": 0.4})
         self.flash = cfg.get("flash_sale", {})
+        # Percent of checkouts done in the database (tx checkout_db) instead of the application (tx checkout).
+        self.checkout_in_database = float(cfg.get("checkout_in_database", 0))
         self.started = time.monotonic()
         for name in TRANSACTIONS:
             for result in ("ok", "out_of_stock", "lock_timeout", "canceled", "deadlock", "connection", "other",
@@ -627,6 +637,8 @@ class Load:
             if time.monotonic() - queued_at > self.max_wait:  # the user gave up waiting
                 self.metrics.tx.labels(tx, "expired").inc()
                 continue
+            if tx == "checkout" and random.random() * 100 < self.checkout_in_database:
+                tx = "checkout_db"
             result = "ok"
             for attempt in (1, 2):
                 try:
@@ -671,6 +683,7 @@ class Load:
             self.metrics.base_rate.set(self.base_rate)
             self.metrics.flash_sale.set(1 if self.flash_active() else 0)
             self.metrics.paused.set(1 if self.paused else 0)
+            self.metrics.checkout_in_database.set(self.checkout_in_database)
             self.stop.wait(1)
 
     def status(self):
@@ -679,6 +692,7 @@ class Load:
             "target_rate": round(self.target_rate(), 1),
             "paused": self.paused,
             "flash_sale_seconds_left": max(0, round(self.flash_until - time.time())),
+            "checkout_in_database_percent": self.checkout_in_database,
             "queued_requests": self.requests.qsize(),
             "running_jobs": sorted(self.jobs.active),
             "jobs": sorted(self.jobs.run_fn),
@@ -730,11 +744,14 @@ def control_server(load, scenarios, port):
                 load.paused = False
             elif action == "flash-sale":
                 load.start_flash_sale(int(value or load.flash.get("duration", 180)))
+            elif action == "checkout-in-db" and value:
+                load.checkout_in_database = min(100.0, max(0.0, float(value)))
+                LOG.info("checkouts in the database (shop.place_order): %.0f%%", load.checkout_in_database)
             elif action == "run" and value in load.jobs.run_fn:
                 if not load.jobs.start(value):
                     return self._reply(409, {"error": f"{value} is already running"})
             else:
-                return self._reply(400, {"error": "use: rate N | pause | resume | flash-sale [SECONDS] | run JOB",
+                return self._reply(400, {"error": "use: rate N | pause | resume | flash-sale [SECONDS] | checkout-in-db PERCENT | run JOB",
                                          "jobs": sorted(load.jobs.run_fn)})
             self._reply(200, {**load.status(), "running_scenarios": [s["scenario"] for s in scenarios.status()]})
 

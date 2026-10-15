@@ -93,6 +93,7 @@ ssh pmm-server
 labapp load status              # rates, mode, queued requests, running jobs
 labapp load rate 60             # more traffic
 labapp load flash-sale 300      # a 5-minute flash sale, now
+labapp load checkout-in-db 100  # every checkout through the database function shop.place_order()
 labapp load run stock_recount   # a batch job, now
 labapp load pause               # quiet, e.g. to look at one query in isolation
 labapp load resume
@@ -244,7 +245,7 @@ The `grep` runs in a root shell because only `postgres` and root can read the lo
 - **`log_statement` is off,** because pgAudit replaces it. PostgreSQL's own DDL logging would write each change a second time, and a `CREATE USER ... PASSWORD '...'` in clear text.
 - **A superuser can switch the audit off,** so it is not proof against the people it audits unless the log also leaves the server.
 - **A statement is logged when it runs.** A DDL statement that is cancelled while it still waits for its lock leaves no audit line.
-- **A `DROP` writes one line for every object that goes with it.** `DROP TABLE shop.orders CASCADE` leaves 59 lines: the table, its sequence, 5 indexes, 12 constraints, 4 column defaults and the 36 internal triggers of its foreign keys. The table's own line is the one with `DROP TABLE,TABLE,`.
+- **A `DROP` writes one line for every object that goes with it.** `DROP TABLE shop.orders CASCADE` leaves 61 lines: the table, its sequence, 5 indexes, 12 constraints, 4 column defaults, and 38 triggers: the 36 internal ones of its foreign keys and the shop's own two (updated_at and the status history). The table's own line is the one with `DROP TABLE,TABLE,`.
 - **A refused statement gets no audit line, but it is still in the log.** When a user lacks the permission (`must be owner`, `permission denied`), PostgreSQL itself logs the error and, on the next line, the full statement with the user, application and client address. That covers every refused command, `TRUNCATE` and `pg_terminate_backend()` included. Find them with `grep -B1 STATEMENT:` or by the error text.
 - **A failed `CREATE ROLE ... PASSWORD` puts the password in the log.** pgAudit hides passwords in its own lines, but the error line above carries the statement as it was typed. Set passwords with `\password` in psql, which sends only the hash.
 

@@ -84,6 +84,7 @@ log_temp_files = 0                      # every query that spills to disk
 log_statement = 'none'                  # pgAudit logs the schema changes instead (below), without passwords
 track_io_timing = on                    # I/O time in EXPLAIN (ANALYZE, BUFFERS), statistics views, PMM
 track_wal_io_timing = on
+track_functions = 'pl'                  # calls and time of each PL/pgSQL function: pg_stat_user_functions
 
 #------------------------------------------------------------------------------
 # Audit (pgAudit): who changed what, as lines starting with "AUDIT:" in the server log
