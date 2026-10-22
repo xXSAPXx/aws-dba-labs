@@ -1,0 +1,153 @@
+---
+##################################################################
+# Percona Server for MySQL installation:
+##################################################################
+
+- name: Enable the Percona Server for MySQL repository
+  ansible.builtin.command: percona-release setup -y {{ mysql_repository }}
+  args:
+    creates: /usr/sbin/mysqld
+
+- name: Enable the XtraBackup and Percona Toolkit repositories
+  ansible.builtin.command: percona-release enable {{ item }} release
+  loop: "{{ mysql_extra_repositories }}"
+  changed_when: false # enabling an already enabled repository is a no-op
+
+# PERCONA_TELEMETRY_DISABLE: Percona's packages would otherwise install and start a telemetry agent.
+- name: Install Percona Server, XtraBackup, MySQL Shell, Percona Toolkit and the AWS CLI
+  ansible.builtin.dnf:
+    name: "{{ mysql_packages }}"
+    state: present
+  environment:
+    PERCONA_TELEMETRY_DISABLE: "1"
+
+
+##################################################################
+# Configuration and first start:
+##################################################################
+
+- name: Read the files in /etc/my.cnf.d
+  ansible.builtin.lineinfile:
+    path: /etc/my.cnf
+    line: "!includedir /etc/my.cnf.d"
+    insertafter: EOF
+  notify: Restart MySQL
+
+- name: Write the lab settings
+  ansible.builtin.template:
+    src: lab.cnf.j2
+    dest: /etc/my.cnf.d/lab.cnf
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart MySQL
+
+# The first start creates the data directory on the data volume (mysqld --initialize) and writes a
+# temporary root password to the error log.
+- name: Start MySQL
+  ansible.builtin.systemd_service:
+    name: "{{ mysql_service }}"
+    state: started
+    enabled: true
+
+- name: Apply pending restarts before configuring the database
+  ansible.builtin.meta: flush_handlers
+
+
+##################################################################
+# root: the lab password instead of the temporary one
+##################################################################
+
+- name: Check whether root already has the lab password
+  ansible.mysql.mysql_info:
+    filter: version
+    login_user: root
+    login_password: "{{ mysql_root_password }}"
+    login_unix_socket: "{{ mysql_socket }}"
+  register: mysql_root_login
+  failed_when: false
+  no_log: true
+
+- name: Set the root password (first run only)
+  when: mysql_root_login.version is not defined
+  block:
+    - name: Read the temporary root password from the error log
+      ansible.builtin.shell: |
+        set -o pipefail
+        grep 'temporary password' {{ mysql_error_log }} | tail -n 1 | awk '{print $NF}'
+      args:
+        executable: /bin/bash
+      register: mysql_temporary_password
+      changed_when: false
+      failed_when: mysql_temporary_password.stdout | length == 0
+      no_log: true
+
+    # The password goes in on stdin, so it never shows in the process list.
+    - name: Replace the temporary root password with the lab password
+      ansible.builtin.command:
+        cmd: mysql --connect-expired-password -u root -S {{ mysql_socket }}
+        stdin: "ALTER USER 'root'@'localhost' IDENTIFIED BY '{{ mysql_root_password }}';"
+      environment:
+        MYSQL_PWD: "{{ mysql_temporary_password.stdout }}"
+      changed_when: true
+      no_log: true
+
+- name: Store root's login (/root/.my.cnf), so sudo mysql needs no password
+  ansible.builtin.template:
+    src: root-my.cnf.j2
+    dest: /root/.my.cnf
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+
+
+##################################################################
+# Databases and users:
+##################################################################
+
+- name: Create the databases
+  ansible.mysql.mysql_db:
+    name: "{{ mysql_databases }}"
+    state: present
+    login_user: root
+    login_password: "{{ mysql_root_password }}"
+    login_unix_socket: "{{ mysql_socket }}"
+  when: mysql_databases | length > 0
+
+- name: Create the users with their privileges
+  ansible.mysql.mysql_user:
+    name: "{{ item.name }}"
+    host: "{{ item.host }}"
+    password: "{{ item.password }}"
+    priv: "{{ item.priv }}"
+    resource_limits: "{{ item.resource_limits | default(omit) }}"
+    state: present
+    login_user: root
+    login_password: "{{ mysql_root_password }}"
+    login_unix_socket: "{{ mysql_socket }}"
+  loop: "{{ mysql_users }}"
+  loop_control:
+    label: "{{ item.name }}@{{ item.host }}"
+  no_log: true
+
+
+##################################################################
+# Backups: the tools are installed; the backup disk and the S3 folder are ready for them
+##################################################################
+
+- name: Prepare the backup disk
+  ansible.builtin.file:
+    path: "{{ mysql_backup_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0750"
+
+- name: Put the backup locations in every login shell ($BACKUP_DIR, $BACKUP_S3)
+  ansible.builtin.template:
+    src: lab-backup.sh.j2
+    dest: /etc/profile.d/lab-backup.sh
+    owner: root
+    group: root
+    mode: "0644"

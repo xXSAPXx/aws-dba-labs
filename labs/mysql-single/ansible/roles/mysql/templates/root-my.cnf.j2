@@ -1,0 +1,5 @@
+# Managed by Ansible (role: mysql). root's login over the socket: `sudo mysql` needs no password.
+[client]
+user = root
+password = {{ mysql_root_password }}
+socket = {{ mysql_socket }}

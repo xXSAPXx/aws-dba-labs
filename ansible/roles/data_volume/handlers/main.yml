@@ -1,6 +1,0 @@
----
-# A new filesystem has no SELinux labels; the database (confined by SELinux) needs the ones for its path.
-- name: Restore the SELinux labels of the mount point
-  ansible.builtin.command: restorecon -Rv {{ data_volume_mount_point }}
-  register: data_volume_restorecon
-  changed_when: data_volume_restorecon.stdout | length > 0

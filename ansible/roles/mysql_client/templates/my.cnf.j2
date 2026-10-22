@@ -1,0 +1,6 @@
+# Managed by Ansible (role: mysql_client). The lab's admin login: `mysql` connects without a prompt.
+# Another server or user: mysql -h <server> -u <user> -p
+[client]
+host = {{ mysql_client_login.host }}
+user = {{ mysql_client_login.user }}
+password = {{ mysql_client_login.password }}

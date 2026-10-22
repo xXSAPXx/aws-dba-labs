@@ -1,0 +1,11 @@
+---
+# The PMM server is also the load generator and your admin seat: `mysql` connects to the MySQL server
+# as dba without a prompt (~/.my.cnf). Name another server or user on the command line.
+mysql_client_login:
+  host: "{{ groups['mysql'][0] }}"
+  user: dba
+  password: "{{ mysql_dba_password }}"
+
+# sysbench: rate, size and test are the sysbench role's defaults.
+sysbench_mysql_host: "{{ groups['mysql'][0] }}"
+sysbench_mysql_password: "{{ mysql_sbtest_password }}"

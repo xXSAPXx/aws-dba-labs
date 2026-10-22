@@ -1,0 +1,26 @@
+# Managed by Ansible (role: sysbench).
+# A steady load on MySQL: sysbench {{ sysbench_test }} at {{ sysbench_rate }} transactions per second, without end.
+#   journalctl -u {{ sysbench_service }} -f     # one line per minute: tps, qps, latency, errors
+#   systemctl stop {{ sysbench_service }}       # stop the load
+# --mysql-ignore-errors=all: like an application, it keeps going (and reconnects) when MySQL restarts or
+# a transaction fails, and counts the errors in its report line instead of stopping.
+[Unit]
+Description=sysbench load on MySQL (lab workload)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+EnvironmentFile=/etc/{{ sysbench_service }}.env
+ExecStart=/usr/bin/sysbench ${SYSBENCH_TEST} \
+    --mysql-host=${SYSBENCH_MYSQL_HOST} --mysql-port=${SYSBENCH_MYSQL_PORT} \
+    --mysql-user=${SYSBENCH_MYSQL_USER} --mysql-password=${SYSBENCH_MYSQL_PASSWORD} --mysql-db=${SYSBENCH_MYSQL_DB} \
+    --mysql-ssl=${SYSBENCH_MYSQL_SSL} --mysql-ignore-errors=all \
+    --tables=${SYSBENCH_TABLES} --table-size=${SYSBENCH_TABLE_SIZE} \
+    --threads=${SYSBENCH_THREADS} --rate=${SYSBENCH_RATE} \
+    --time=0 --report-interval=60 run
+Restart=always
+RestartSec=10
+DynamicUser=yes
+
+[Install]
+WantedBy=multi-user.target

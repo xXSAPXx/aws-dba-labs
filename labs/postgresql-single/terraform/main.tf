@@ -4,7 +4,7 @@
 ######################################## LAB: postgresql-single ####################################################################
 # Single Percona PostgreSQL 17 server (private subnet) monitored by PMM 3 (public subnet, also the SSH jump host).
 # Terraform builds the infrastructure, Ansible (../ansible) configures the servers.
-# Shared modules live in ../../../modules, lab-specific modules in ./modules.
+# The modules are shared with the other labs: ../../../modules.
 
 
 # Server image: the newest official Rocky Linux 10 (free, RHEL-compatible), published by the Rocky Enterprise Software Foundation.
@@ -80,15 +80,17 @@ module "postgresql_role" {
 # Create the EC2: (PostgreSQL Database)
 ######################################################################################
 module "postgresql_ec2_instance" {
-  source = "./modules/postgresql_ec2_instance"
+  source = "../../../modules/db_server"
 
-  # --- PostgreSQL_EC2_Instance Sec_Group Settings ---
+  # --- Security group: SSH, PostgreSQL and ping from the VPC ---
   vpc_id                = module.vpc.vpc_id
   vpc_cidr_block        = module.vpc.vpc_cidr_block
+  db_ports              = [5432]
   sec_group_name        = "PostgreSQL_EC2_Instance_SG"
   sec_group_description = "Allow SSH / PMM and PostgreSQL Ports"
 
-  # --- PostgreSQL_EC2_Instance Settings ---
+  # --- Server ---
+  name          = "postgresql-source"
   ami_id        = data.aws_ami.rocky_10.id
   instance_type = var.postgresql_instance_type
   cpu_credits   = var.cpu_credits
@@ -96,7 +98,6 @@ module "postgresql_ec2_instance" {
   subnet_id     = module.vpc.private_subnet_1_id
   # Its IAM role: access to the backup bucket (attached and changed without replacing the server)
   iam_instance_profile = module.postgresql_role.instance_profile_name
-  postgresql_tag_name  = "postgresql-source"
 
   # EBS Volume Settings (root = OS; data = PostgreSQL, mounted at /var/lib/pgsql):
   volume_size      = 10

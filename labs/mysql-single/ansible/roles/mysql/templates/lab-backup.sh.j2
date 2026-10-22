@@ -1,0 +1,7 @@
+# Managed by Ansible (role: mysql). Where the lab's backups go:
+#   $BACKUP_DIR   the local backup disk
+#   $BACKUP_S3    this server's folder in the lab's S3 bucket (aws s3 ls "$BACKUP_S3/")
+# The AWS CLI takes its credentials from the server's IAM role: no keys on the server.
+export BACKUP_DIR={{ mysql_backup_dir }}
+export BACKUP_S3={{ mysql_backup_s3 }}
+export AWS_DEFAULT_REGION={{ mysql_backup_s3_region }}

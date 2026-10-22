@@ -1,0 +1,12 @@
+---
+# Percona Server for MySQL repository the client comes from (match the server's).
+mysql_client_repository: ps-84-lts
+
+# The admin login written to ~/.my.cnf ([client]), so `mysql` connects without a prompt. Set by the lab
+# (group_vars). Example: { host: mysql-source, user: dba, password: "..." }
+mysql_client_login: {}
+
+# OS users that get the ~/.my.cnf file: the SSH login user and root.
+mysql_client_os_users:
+  - "{{ ansible_user }}"
+  - root

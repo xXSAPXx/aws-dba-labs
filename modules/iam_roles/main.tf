@@ -1,7 +1,7 @@
 ###################################################################################
 # IAM role for a database server (EC2 instance profile): its backups in the S3 bucket.
-# No keys on the server: the AWS SDKs and pgBackRest (repo1-s3-key-type=auto) take the role's temporary
-# credentials from the instance metadata.
+# No keys on the server: the AWS CLI and SDKs, pgBackRest (repo1-s3-key-type=auto) and XtraBackup's xbcloud
+# take the role's temporary credentials from the instance metadata.
 ###################################################################################
 
 data "aws_iam_policy_document" "assume_ec2" {
@@ -24,8 +24,8 @@ resource "aws_iam_instance_profile" "server" {
   role = aws_iam_role.server.name
 }
 
-# Backups: list, read, write and delete (pgBackRest's own retention deletes expired backups) in the backup
-# folder only, and only through the VPC's S3 endpoint.
+# Backups: list, read, write and delete (the backup tool's retention deletes expired backups, e.g. pgBackRest)
+# in the backup folder only, and only through the VPC's S3 endpoint.
 data "aws_iam_policy_document" "backups" {
   statement {
     sid       = "ListTheBackupFolder"

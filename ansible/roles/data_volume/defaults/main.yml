@@ -1,7 +1,12 @@
 ---
-# EBS data volume for a database server: found by its volume ID, formatted once, mounted.
+# EBS volumes of a database server: each found by its volume ID, formatted once, mounted.
 # Run this role before the database is installed, so all its files land on the data volume.
 data_volume_id: "" # from the inventory (Terraform), e.g. vol-0123456789abcdef0
 data_volume_mount_point: "" # set by the lab, e.g. /var/lib/pgsql
+
+# More volumes of the same server, set by the lab, e.g. a backup disk:
+#   - { id: "{{ backup_volume_id }}", mount_point: /backup }
+data_volume_extra_volumes: []
+
 data_volume_fstype: xfs
 data_volume_mount_options: defaults,noatime,nofail # nofail: the server still boots if the disk is missing

@@ -1,0 +1,26 @@
+---
+# sysbench (EPEL) on the load generator: prepares its tables once, then runs as a service at a fixed rate.
+# Watch it in PMM (MySQL Summary, Query Analytics) and with: journalctl -u sysbench-workload -f
+
+# The database, set by the lab (group_vars):
+sysbench_mysql_host: ""
+sysbench_mysql_port: 3306
+sysbench_mysql_user: sbtest
+sysbench_mysql_password: ""
+sysbench_mysql_db: sbtest
+
+# The test and its data: 8 tables of 1,000,000 rows are about 2 GB, more than a t3.small's buffer pool
+# holds, so some reads go to disk. Changing the size after the first run needs: sysbench ... cleanup.
+sysbench_test: oltp_read_write # each transaction: 14 reads, 4 writes (update, delete, insert)
+sysbench_tables: 8
+sysbench_table_size: 1000000
+
+# The load: transactions per second, spread over these connections. 0 = as fast as possible.
+sysbench_rate: 50
+sysbench_threads: 8
+
+# Connections use TLS: MySQL 8.4's default login (caching_sha2_password) needs TLS or the server's RSA key
+# the first time a user logs in after a restart.
+sysbench_mysql_ssl: "on"
+
+sysbench_service: sysbench-workload
