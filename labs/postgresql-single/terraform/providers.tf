@@ -24,7 +24,7 @@ provider "aws" {
 
   default_tags {
     tags = {
-      Project   = "aws-postgresql-lab"
+      Project   = "aws-dba-labs"
       Lab       = "postgresql-single"
       ManagedBy = "terraform"
     }

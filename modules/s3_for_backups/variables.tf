@@ -1,5 +1,5 @@
 variable "bucket_name" {
-  description = "Name of the backup bucket. Globally unique: include the account ID, e.g. aws-postgresql-lab-<lab>-<account id>."
+  description = "Name of the backup bucket. Globally unique: include the account ID, e.g. aws-dba-labs-<lab>-<account id>."
   type        = string
 }
 
