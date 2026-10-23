@@ -8,7 +8,7 @@ aws_key_pair               = "<EXAMPLE>"
 # Your public IP with /32 (get it with: curl -s https://checkip.amazonaws.com). Only this IP can reach SSH and the PMM UI.
 admin_cidr                 = "203.0.113.10/32"
 
-# Optional: instance types (defaults: MySQL t3.small, PMM t3.medium; t2 is not supported by Rocky Linux 10).
+# Optional: instance types (defaults: MySQL t3.medium, PMM t3.medium; t2 is not supported by Rocky Linux 10).
 # For heavy load tests use a non-burstable type for MySQL, e.g. m7i.large.
 # mysql_instance_type      = "m7i.large"
 # pmm_instance_type        = "t3.medium"

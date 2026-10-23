@@ -128,11 +128,16 @@
     label: "{{ item.name }}"
 
 # Without a priv, a user's privileges are left alone: they come from its roles.
+# The plugin is named because, given a plain password, ansible.mysql 5.x creates mysql_native_password accounts on
+# servers before 9.7, and 8.4 has that plugin off. With a salt the module computes the caching_sha2_password hash
+# itself, so the next run sees an unchanged password as unchanged. A salt needn't be secret, only differ per account.
 - name: Create the users
   ansible.mysql.mysql_user:
     name: "{{ item.name }}"
     host: "{{ item.host }}"
-    password: "{{ item.password }}"
+    plugin: caching_sha2_password
+    plugin_auth_string: "{{ item.password }}"
+    salt: "{{ ((item.name ~ '@' ~ item.host) | hash('sha1'))[:20] }}"
     priv: "{{ item.priv | default(omit) }}"
     resource_limits: "{{ item.resource_limits | default(omit) }}"
     state: present

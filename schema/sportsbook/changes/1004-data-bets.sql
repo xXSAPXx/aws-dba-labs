@@ -17,6 +17,8 @@ CROSS JOIN (SELECT COUNT(*) AS n FROM players) p;
 
 --changeset lab:1004-data-bet-legs context:data
 --comment: The match and outcome of every leg: 70% singles, the rest accumulators of 2-4 legs. A helper table, dropped at the end.
+-- CREATE TABLE commits by itself: if the INSERT dies, the empty table stays, and the rerun starts by dropping it.
+DROP TABLE IF EXISTS gen_legs;
 CREATE TABLE gen_legs (bet_id BIGINT NOT NULL, event_id BIGINT NOT NULL, outcome TINYINT NOT NULL);
 INSERT INTO gen_legs (bet_id, event_id, outcome)
 SELECT b.id, 1 + FLOOR(RAND() * e.n), 1 + FLOOR(RAND() * 7)

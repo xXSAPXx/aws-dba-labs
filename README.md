@@ -14,7 +14,7 @@ Hands-on database labs on AWS that simulate a production environment. Each lab i
 | Lab | What it deploys | Status |
 |---|---|---|
 | [postgresql-single](labs/postgresql-single/) | Percona PostgreSQL 17 + PMM 3 | Available |
-| [mysql-single](labs/mysql-single/) | Percona Server for MySQL 8.4 + PMM 3 under a simulated sportsbook's traffic, backup disk and S3 bucket for XtraBackup and binlog backups | Built, first deploy pending |
+| [mysql-single](labs/mysql-single/) | Percona Server for MySQL 8.4 + PMM 3 under a simulated sportsbook's traffic, backup disk and S3 bucket for XtraBackup and binlog backups | Available |
 | postgresql-patroni | Patroni HA cluster with etcd, pgBackRest backups to S3 | Planned |
 | pxc | Percona XtraDB Cluster | Planned |
 | mongodb-replicaset | MongoDB replica set | Planned |
