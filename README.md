@@ -14,7 +14,7 @@ Hands-on database labs on AWS that simulate a production environment. Each lab i
 | Lab | What it deploys | Status |
 |---|---|---|
 | [postgresql-single](labs/postgresql-single/) | Percona PostgreSQL 17 + PMM 3 | Available |
-| [mysql-single](labs/mysql-single/) | Percona Server for MySQL 8.4 + PMM 3, sysbench load, backup disk and S3 bucket for XtraBackup and binlog backups | Built, first deploy pending |
+| [mysql-single](labs/mysql-single/) | Percona Server for MySQL 8.4 + PMM 3 under a simulated sportsbook's traffic, backup disk and S3 bucket for XtraBackup and binlog backups | Built, first deploy pending |
 | postgresql-patroni | Patroni HA cluster with etcd, pgBackRest backups to S3 | Planned |
 | pxc | Percona XtraDB Cluster | Planned |
 | mongodb-replicaset | MongoDB replica set | Planned |
@@ -37,11 +37,14 @@ ansible/roles/        Shared Ansible roles, used by every lab (how it works: ans
   postgresql_client/  psql and pgbench on the load generator
   mysql_client/       The MySQL client on the load generator, the admin login in ~/.my.cnf
   sysbench/           sysbench tables and a steady sysbench load as a service
+  sportsbook/         The sportsbook application: players, odds feed, batch jobs, PMM metrics
   postgresql_tools/   Tools on the database server: pg_activity, pg_top, pgBadger
   liquibase/          Applies a database's SQL migrations from the repo
   labapp/             The simulated application: availability probe, shop workload, PMM dashboard
-schema/shop/          The shop database: Liquibase migrations, data generation, exercises
-tools/labapp/         The simulated application's code (Python)
+schema/shop/          The shop database (PostgreSQL): Liquibase migrations, data generation, exercises
+schema/sportsbook/    The sportsbook database (MySQL): Liquibase migrations, data generation
+tools/labapp/         The shop's simulated application (Python)
+tools/sportsbook/     The sportsbook's simulated application (Python)
 labs/<lab>/
   terraform/          The lab's Terraform root, with its own state file
   ansible/            The lab's playbook (site.yml) and lab-specific roles

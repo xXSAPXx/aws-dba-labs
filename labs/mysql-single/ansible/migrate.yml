@@ -1,0 +1,11 @@
+---
+# Apply the pending database migrations only, in seconds, while everything else keeps running.
+# Typical loop: add a file to schema/sportsbook/changes/ (e.g. 0009-add-bets-promo-code.sql), then:
+#   ansible-playbook migrate.yml
+# On the PMM server, liquibase-sportsbook status / update-sql / history / rollback-count show and control the same.
+
+- name: Database migrations (Liquibase, on the PMM server)
+  hosts: pmm_server
+  become: true
+  roles:
+    - liquibase

@@ -1,0 +1,6 @@
+---
+- name: Restart the sportsbook workload
+  ansible.builtin.systemd_service:
+    name: sportsbook-workload
+    state: restarted
+    daemon_reload: true
