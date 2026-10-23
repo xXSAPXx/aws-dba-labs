@@ -13,10 +13,7 @@
 
 # The two servers don't need each other for their own installation. With strategy "free" each one works
 # through its own list without waiting for the other at every step; the `when` picks each server's roles
-# by its group. On a new lab that saves several minutes:
-# - The PMM server starts at once. Only the PostgreSQL server waits for the NAT gateway.
-# - The shop's migrations and data (liquibase, about 5 minutes) start in the background as soon as the
-#   database accepts a login, while the PMM server is still being installed. The last play collects them.
+# by its group. On a new lab the PMM server starts at once; only the PostgreSQL server waits for the NAT gateway.
 - name: Set up the PMM server and the PostgreSQL server, each at its own pace
   hosts: all
   become: true
@@ -32,7 +29,7 @@
         timeout: 300
   roles:
     - role: common
-    - role: liquibase # before the PMM server: installs Liquibase and starts the update in the background
+    - role: liquibase # installs Liquibase and the shop's changelog; the next plays run it
       when: "'pmm_server' in group_names"
       vars:
         liquibase_update_mode: background
@@ -49,6 +46,21 @@
 
 # From here on the steps need both servers: PMM must be running before a server registers with it,
 # and the shop's data must be there before the application starts.
+
+# Only now that PostgreSQL is configured: a restart for a changed setting would cut a running update off.
+# The update (on a new lab with the data generation, about 5 minutes) runs in the background while
+# PostgreSQL registers with PMM, and the last play collects it.
+- name: Start the shop's migrations and data in the background
+  hosts: pmm_server
+  become: true
+  tasks:
+    - name: Start the pending changesets
+      ansible.builtin.import_role:
+        name: liquibase
+        tasks_from: start.yml
+      vars:
+        liquibase_update_mode: background
+
 - name: Register the PostgreSQL server with PMM
   hosts: postgresql
   become: true
@@ -59,7 +71,7 @@
   hosts: pmm_server
   become: true
   tasks:
-    - name: Wait for the shop's migrations and data, started in the background above
+    - name: Wait for the shop's migrations and data, started in the background before the registration
       ansible.builtin.import_role:
         name: liquibase
         tasks_from: finish.yml

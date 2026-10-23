@@ -1,41 +1,69 @@
 ---
-# The changelog travels as one archive. Copied file by file, every file is its own round trip to the server:
-# a minute for 20 files on a new lab, half a minute on every later run.
-- name: Create a temporary file on this machine for the changelog of {{ liquibase_project.name }}
-  ansible.builtin.tempfile:
-    state: file
-    prefix: liquibase-{{ liquibase_project.name }}-
-    suffix: .tar.gz
-  register: liquibase_archive
+# The changelog travels as one archive, and only when its files differ from the server's copy. Both sides
+# are compared by content: unarchive alone compares modification times, which a git checkout or pull
+# changes on files whose content stays the same.
+- name: Fingerprint the changelog in the repo for {{ liquibase_project.name }}
+  ansible.builtin.shell: |
+    set -o pipefail
+    cd {{ liquibase_project.changelog_dir | quote }} && find . -type f -print0 | LC_ALL=C sort -z | xargs -0 -r sha256sum | sha256sum
+  args:
+    executable: /bin/bash
+  register: liquibase_changelog_repo
   delegate_to: localhost
   become: false
   changed_when: false
 
-- name: Pack the changelog from the repo for {{ liquibase_project.name }}
-  community.general.archive:
-    path: "{{ liquibase_project.changelog_dir }}/"
-    dest: "{{ liquibase_archive.path }}"
-    format: gz
-    mode: "0600"
-  delegate_to: localhost
-  become: false
+- name: Fingerprint the changelog on the server for {{ liquibase_project.name }}
+  ansible.builtin.shell: |
+    set -o pipefail
+    cd {{ (liquibase_projects_dir ~ '/' ~ liquibase_project.name) | quote }} && find . -type f -print0 | LC_ALL=C sort -z | xargs -0 -r sha256sum | sha256sum
+  args:
+    executable: /bin/bash
+  register: liquibase_changelog_server
   changed_when: false
+  failed_when: false # no copy yet: an empty fingerprint, so the changelog is unpacked
 
-- name: Unpack the changelog on the server for {{ liquibase_project.name }}
-  ansible.builtin.unarchive:
-    src: "{{ liquibase_archive.path }}"
-    dest: "{{ liquibase_projects_dir }}/{{ liquibase_project.name }}/"
-    owner: root
-    group: root
-    mode: a-x,u+rwX,go+rX # files: u=rw,go=r; directories also get x
+# Copied file by file, every file is its own round trip to the server: a minute for 20 files on a new lab.
+- name: Copy the changelog from the repo for {{ liquibase_project.name }}
+  when: liquibase_changelog_repo.stdout != liquibase_changelog_server.stdout
+  block:
+    - name: Create a temporary file on this machine for the changelog of {{ liquibase_project.name }}
+      ansible.builtin.tempfile:
+        state: file
+        prefix: liquibase-{{ liquibase_project.name }}-
+        suffix: .tar.gz
+      register: liquibase_archive
+      delegate_to: localhost
+      become: false
+      changed_when: false
 
-- name: Remove the temporary file for {{ liquibase_project.name }}
-  ansible.builtin.file:
-    path: "{{ liquibase_archive.path }}"
-    state: absent
-  delegate_to: localhost
-  become: false
-  changed_when: false
+    - name: Pack the changelog from the repo for {{ liquibase_project.name }}
+      community.general.archive:
+        path: "{{ liquibase_project.changelog_dir }}/"
+        dest: "{{ liquibase_archive.path }}"
+        format: gz
+        mode: "0600"
+      delegate_to: localhost
+      become: false
+      changed_when: false
+
+    - name: Unpack the changelog on the server for {{ liquibase_project.name }}
+      ansible.builtin.unarchive:
+        src: "{{ liquibase_archive.path }}"
+        dest: "{{ liquibase_projects_dir }}/{{ liquibase_project.name }}/"
+        owner: root
+        group: root
+        mode: a-x,u+rwX,go+rX # files: u=rw,go=r; directories also get x
+
+  always:
+    - name: Remove the temporary file for {{ liquibase_project.name }}
+      ansible.builtin.file:
+        path: "{{ liquibase_archive.path }}"
+        state: absent
+      delegate_to: localhost
+      become: false
+      changed_when: false
+      when: liquibase_archive.path is defined
 
 # A file deleted from the repo must not stay on the server, or includeAll would still apply it.
 - name: List the changelog files on the server for {{ liquibase_project.name }}

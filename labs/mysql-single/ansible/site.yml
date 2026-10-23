@@ -13,10 +13,7 @@
 
 # The two servers don't need each other for their own installation. With strategy "free" each one works
 # through its own list without waiting for the other at every step; the `when` picks each server's roles
-# by its group. On a new lab:
-# - The PMM server starts at once. Only the MySQL server waits for the NAT gateway.
-# - The sportsbook's migrations and data (Liquibase) start in the background on the PMM server and begin as
-#   soon as MySQL accepts their login, while PMM is still being installed. The last play collects them.
+# by its group. On a new lab the PMM server starts at once; only the MySQL server waits for the NAT gateway.
 - name: Set up the PMM server and the MySQL server, each at its own pace
   hosts: all
   become: true
@@ -32,7 +29,7 @@
         timeout: 300
   roles:
     - role: common
-    - role: liquibase # before the PMM server: installs Liquibase and starts the update in the background
+    - role: liquibase # installs Liquibase and the sportsbook's changelog; the next plays run it
       when: "'pmm_server' in group_names"
       vars:
         liquibase_update_mode: background
@@ -44,9 +41,26 @@
       when: "'mysql' in group_names"
     - role: mysql
       when: "'mysql' in group_names"
+    - role: mysql_tools # Dolphie
+      when: "'mysql' in group_names"
 
 # From here on the steps need both servers: PMM must be running before a server registers with it,
 # and the sportsbook's data must be there before the application starts.
+
+# Only now that MySQL is configured: a restart for a changed lab.cnf would cut a running update off. The
+# update (on a new lab with the data generation: minutes) runs in the background while MySQL registers with
+# PMM, and the last play collects it.
+- name: Start the sportsbook's migrations and data in the background
+  hosts: pmm_server
+  become: true
+  tasks:
+    - name: Start the pending changesets
+      ansible.builtin.import_role:
+        name: liquibase
+        tasks_from: start.yml
+      vars:
+        liquibase_update_mode: background
+
 - name: Register the MySQL server with PMM
   hosts: mysql
   become: true
@@ -57,7 +71,7 @@
   hosts: pmm_server
   become: true
   tasks:
-    - name: Wait for the sportsbook's migrations and data, started in the background above
+    - name: Wait for the sportsbook's migrations and data, started in the background before the registration
       ansible.builtin.import_role:
         name: liquibase
         tasks_from: finish.yml

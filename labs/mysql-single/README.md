@@ -11,7 +11,7 @@ A replica and ProxySQL come later; the binlogs and GTIDs are already on for them
   - **`/var/lib/mysql`** (20 GB): the data and the binlogs, as on the production servers.
   - **`/backup`** (20 GB): a local copy of the backups before they go to S3.
   
-  Also installed: Percona XtraBackup 8.4, MySQL Shell, Percona Toolkit and the AWS CLI.
+  Also installed: Percona XtraBackup 8.4, MySQL Shell, Percona Toolkit, the AWS CLI, and Dolphie to watch MySQL live.
 - **mysql-pmm**: PMM 3 (Docker) in the public subnet, also the SSH jump host and the application side: the [sportsbook application](../../tools/sportsbook/README.md), Liquibase with the [sportsbook database's migrations](../../schema/sportsbook/README.md), and the MySQL client. SSH and the PMM UI accept connections only from your `admin_cidr`.
 - **Backup bucket** and an IAM role for `mysql-source`: it may read, write and delete in `s3://<bucket>/mysql/` and nowhere else, only from the VPC. The bucket is destroyed with the lab. The bucket's settings are the same as in [postgresql-single](../postgresql-single/README.md#backups-the-s3-bucket).
 
@@ -47,7 +47,7 @@ ansible-playbook site.yml
 `terraform apply` also writes the SSH config (`~/.ssh/aws-mysql-single.conf`) and the Ansible inventory (`ansible/inventory.ini`). The playbook:
 - installs MySQL, PMM and the tools, and generates the lab passwords into `ansible/credentials/`;
 - registers MySQL in PMM;
-- builds the sportsbook database with Liquibase. The first run also generates its data (about 1 GB), which starts in the background while PMM is still being installed;
+- builds the sportsbook database with Liquibase. The first run also generates its data (about 1 GB), which runs in the background while MySQL registers with PMM;
 - starts the sportsbook application.
 
 ## Connect
@@ -71,6 +71,19 @@ ssh mysql-source             # MySQL, through the jump host
 | `sb_app`, `sb_feed`, `sb_batch`, `sb_reporting`, `sb_support` | the PMM server | their role's privileges in `sportsbook` ([who may do what](../../schema/sportsbook/README.md#who-may-do-what)) | `mysql_sb_<name>_password` |
 
 `skip_name_resolve` is on, so accounts are matched by IP: everyone but `root`, `pmm` and `backup` logs in only from the PMM server's private IP.
+
+### Watch MySQL live: Dolphie
+
+[Dolphie](https://github.com/charles-001/dolphie) is a terminal dashboard of the server, refreshed every second: the processlist, open transactions and their locks, InnoDB, replication, and graphs of the server's metrics. PMM shows the history; Dolphie shows this second. On `mysql-source`:
+
+```bash
+sudo -i dolphie                                          # dashboard and processlist; ? opens the command list
+sudo -i dolphie --panels dashboard,processlist,graphs,metadata_locks
+sudo -i dolphie --show-trxs-only                         # only sessions with an open transaction
+sudo -i dolphie --filters time=2                         # only statements running 2 s or longer
+```
+
+It logs in as `root` over the socket, from `/root/.my.cnf`. To keep a record of an incident, start it with `--record --replay-dir /root/dolphie-replays`, and look through it later with `--replay-file`.
 
 ## How MySQL is set up
 
