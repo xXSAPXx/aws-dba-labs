@@ -34,11 +34,16 @@ mysql_binlog_expire_seconds: 259200 # 3 days
 #   mysql_settings_extra: { long_query_time: 0.1, innodb_print_all_deadlocks: "ON" }
 mysql_settings_extra: {}
 
-# Users and databases, set by the lab (group_vars). Example:
+# Users, roles and databases, set by the lab (group_vars). Example:
 #   mysql_users: [{ name: dba, host: 10.0.1.5, password: "...", priv: "*.*:ALL,GRANT" }]
-#   Optional per user: resource_limits, e.g. { MAX_USER_CONNECTIONS: 10 }
+#   Optional per user: priv (without it, the user's privileges are left alone: they come from its roles),
+#   resource_limits, e.g. { MAX_USER_CONNECTIONS: 10 }.
+#   mysql_roles: [{ name: sportsbook_app, members: ["sb_app@10.0.1.5"] }]
+#   The roles' privileges come from the database migrations (GRANT ... TO role); the members get them as their
+#   default role.
 #   mysql_databases: [sbtest]
 mysql_users: []
+mysql_roles: []
 mysql_databases: []
 
 # Backups: where they go on the server and in S3 (the lab sets mysql_backup_s3 from the Terraform outputs).

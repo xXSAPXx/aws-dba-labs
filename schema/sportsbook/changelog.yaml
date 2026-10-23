@@ -1,0 +1,8 @@
+# Liquibase master changelog of the sportsbook database (MySQL 8.4).
+# Applies every file in changes/ in name order: 0001-... schema and access, 1000-... data (context "data").
+# Each change is a "formatted SQL" changeset; Liquibase records what ran in DATABASECHANGELOG (in the
+# sportsbook database itself). A new migration = a new file, e.g. changes/0009-add-bets-promo-code.sql.
+databaseChangeLog:
+  - includeAll:
+      path: changes/
+      relativeToChangelogFile: true

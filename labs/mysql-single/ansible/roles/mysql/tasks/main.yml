@@ -115,12 +115,25 @@
     login_unix_socket: "{{ mysql_socket }}"
   when: mysql_databases | length > 0
 
-- name: Create the users with their privileges
+# Before the users: a migration user can log in as soon as it exists, and its migrations grant to the roles.
+- name: Create the roles (their privileges come from the database migrations)
+  ansible.mysql.mysql_role:
+    name: "{{ item.name }}"
+    state: present
+    login_user: root
+    login_password: "{{ mysql_root_password }}"
+    login_unix_socket: "{{ mysql_socket }}"
+  loop: "{{ mysql_roles }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+# Without a priv, a user's privileges are left alone: they come from its roles.
+- name: Create the users
   ansible.mysql.mysql_user:
     name: "{{ item.name }}"
     host: "{{ item.host }}"
     password: "{{ item.password }}"
-    priv: "{{ item.priv }}"
+    priv: "{{ item.priv | default(omit) }}"
     resource_limits: "{{ item.resource_limits | default(omit) }}"
     state: present
     login_user: root
@@ -130,6 +143,19 @@
   loop_control:
     label: "{{ item.name }}@{{ item.host }}"
   no_log: true
+
+# set_default_role_all (the module's default): SET DEFAULT ROLE ALL TO each member, so the role is active at login.
+- name: Make the users members of their roles
+  ansible.mysql.mysql_role:
+    name: "{{ item.name }}"
+    members: "{{ item.members }}"
+    state: present
+    login_user: root
+    login_password: "{{ mysql_root_password }}"
+    login_unix_socket: "{{ mysql_socket }}"
+  loop: "{{ mysql_roles | selectattr('members', 'defined') | list }}"
+  loop_control:
+    label: "{{ item.name }}"
 
 
 ##################################################################

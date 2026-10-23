@@ -1,6 +1,6 @@
 ---
 ##################################################################
-# Install Java, Liquibase and the PostgreSQL JDBC driver:
+# Install Java, Liquibase and the JDBC drivers:
 ##################################################################
 
 - name: Install Java
@@ -37,13 +37,16 @@
     remote_src: true
     creates: "{{ liquibase_dir }}/{{ liquibase_version }}/liquibase"
 
-- name: Download the PostgreSQL JDBC driver into Liquibase's lib (checksum verified)
+- name: Download the JDBC drivers into Liquibase's lib (checksum verified)
   ansible.builtin.get_url:
-    url: "{{ liquibase_jdbc_download_url }}"
-    dest: "{{ liquibase_dir }}/{{ liquibase_version }}/lib/postgresql-{{ liquibase_jdbc_version }}.jar"
-    checksum: "{{ liquibase_jdbc_checksum }}"
+    url: "{{ item.url }}"
+    dest: "{{ liquibase_dir }}/{{ liquibase_version }}/lib/{{ item.file }}"
+    checksum: "{{ item.checksum }}"
     mode: "0644"
-  # Maven Central once answered "404 Not Found" for this file for a moment: try again before giving up.
+  loop: "{{ liquibase_jdbc_drivers }}"
+  loop_control:
+    label: "{{ item.file }}"
+  # Maven Central once answered "404 Not Found" for a driver for a moment: try again before giving up.
   register: liquibase_jdbc_download
   until: liquibase_jdbc_download is success
   retries: 5

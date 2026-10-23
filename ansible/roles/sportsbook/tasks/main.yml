@@ -1,0 +1,130 @@
+---
+- name: Check that the lab set the connections and the PMM password
+  ansible.builtin.assert:
+    that:
+      - sportsbook_db.app is defined and sportsbook_db.feed is defined
+      - sportsbook_db.batch is defined and sportsbook_db.reporting is defined
+      - sportsbook_pmm_password | length > 0
+    fail_msg: sportsbook_db (app, feed, batch, reporting) and sportsbook_pmm_password must be set (group_vars).
+    quiet: true
+
+
+##################################################################
+# Install the application:
+##################################################################
+
+- name: Create the sportsbook system user
+  ansible.builtin.user:
+    name: "{{ sportsbook_user }}"
+    system: true
+    shell: /sbin/nologin
+    home: "{{ sportsbook_dir }}"
+    create_home: false
+
+- name: Create the sportsbook directories
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: root
+    group: "{{ item.group }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - { path: "{{ sportsbook_dir }}", group: root, mode: "0755" }
+    - { path: /etc/sportsbook, group: "{{ sportsbook_user }}", mode: "0750" }
+
+- name: Install the Python libraries in a virtualenv
+  ansible.builtin.pip:
+    name: "{{ sportsbook_python_packages }}"
+    virtualenv: "{{ sportsbook_dir }}/venv"
+    virtualenv_command: python3 -m venv
+    state: present
+  notify: Restart the sportsbook workload
+
+- name: Install the application
+  ansible.builtin.copy:
+    src: "{{ sportsbook_source_dir }}/{{ item }}"
+    dest: "{{ sportsbook_dir }}/{{ item }}"
+    owner: root
+    group: root
+    mode: "0755"
+  loop: "{{ sportsbook_files }}"
+  notify: Restart the sportsbook workload
+
+- name: Put the sportsbook command on PATH
+  ansible.builtin.copy:
+    content: |
+      #!/bin/sh
+      # Managed by Ansible (role: sportsbook).
+      exec {{ sportsbook_dir }}/venv/bin/python {{ sportsbook_dir }}/sportsbook.py "$@"
+    dest: /usr/local/bin/sportsbook
+    owner: root
+    group: root
+    mode: "0755"
+
+
+##################################################################
+# The workload service (sportsbook-workload):
+##################################################################
+
+- name: Write the workload configuration
+  ansible.builtin.template:
+    src: workload.json.j2
+    dest: /etc/sportsbook/workload.json
+    owner: root
+    group: "{{ sportsbook_user }}"
+    mode: "0640"
+  notify: Restart the sportsbook workload
+  no_log: true # contains passwords
+
+- name: Install the workload service
+  ansible.builtin.template:
+    src: sportsbook-workload.service.j2
+    dest: /etc/systemd/system/sportsbook-workload.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart the sportsbook workload
+
+- name: Start the workload
+  ansible.builtin.systemd_service:
+    name: sportsbook-workload
+    state: started
+    enabled: true
+    daemon_reload: true
+
+- name: Apply changes before registering with PMM
+  ansible.builtin.meta: flush_handlers
+
+- name: Wait for the metrics
+  ansible.builtin.uri:
+    url: http://127.0.0.1:{{ sportsbook_metrics_port }}/metrics
+  register: sportsbook_metrics
+  until: sportsbook_metrics.status == 200
+  retries: 30
+  delay: 2
+
+
+##################################################################
+# PMM: collect the metrics
+##################################################################
+
+- name: List the services PMM monitors
+  ansible.builtin.uri:
+    url: "{{ sportsbook_pmm_url }}/v1/inventory/services"
+    user: "{{ sportsbook_pmm_user }}"
+    password: "{{ sportsbook_pmm_password }}"
+    force_basic_auth: true
+    validate_certs: false
+  register: sportsbook_pmm_services
+
+# pmm-admin inside the PMM container; PMM then collects the metrics itself.
+- name: Let PMM collect the sportsbook metrics
+  ansible.builtin.command: >-
+    docker exec {{ sportsbook_pmm_container }} pmm-admin add external-serverless
+    --server-url=https://{{ sportsbook_pmm_user }}:{{ sportsbook_pmm_password }}@127.0.0.1:8443/
+    --server-insecure-tls
+    --url=http://{{ sportsbook_metrics_host }}:{{ sportsbook_metrics_port }}/metrics
+    --external-name=sportsbook-workload
+  when: "'sportsbook-workload' not in (sportsbook_pmm_services.json | string)"
+  changed_when: true
+  no_log: true

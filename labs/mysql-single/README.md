@@ -1,6 +1,6 @@
 # Lab: mysql-single
 
-A single Percona Server for MySQL 8.4 server in a private subnet, monitored by PMM 3, under a steady sysbench load. It is built for practising backups: XtraBackup full and incremental backups, MySQL Shell dumps and binlog backups, with a local backup disk and an S3 bucket. The tools are installed; taking the backups is yours to do.
+A single Percona Server for MySQL 8.4 server in a private subnet, monitored by PMM 3, under the production traffic of a simulated sportsbook: players betting on live matches, an odds feed, and the back office's batch jobs. It is built for practising backups: XtraBackup full and incremental backups, MySQL Shell dumps and binlog backups, with a local backup disk and an S3 bucket. The tools are installed; taking the backups is yours to do.
 
 A replica and ProxySQL come later; the binlogs and GTIDs are already on for them.
 
@@ -12,7 +12,7 @@ A replica and ProxySQL come later; the binlogs and GTIDs are already on for them
   - **`/backup`** (20 GB): a local copy of the backups before they go to S3.
   
   Also installed: Percona XtraBackup 8.4, MySQL Shell, Percona Toolkit and the AWS CLI.
-- **mysql-pmm**: PMM 3 (Docker) in the public subnet, also the SSH jump host and the load generator (the MySQL client and sysbench). SSH and the PMM UI accept connections only from your `admin_cidr`.
+- **mysql-pmm**: PMM 3 (Docker) in the public subnet, also the SSH jump host and the application side: the [sportsbook application](../../tools/sportsbook/README.md), Liquibase with the [sportsbook database's migrations](../../schema/sportsbook/README.md), and the MySQL client. SSH and the PMM UI accept connections only from your `admin_cidr`.
 - **Backup bucket** and an IAM role for `mysql-source`: it may read, write and delete in `s3://<bucket>/mysql/` and nowhere else, only from the VPC. The bucket is destroyed with the lab. The bucket's settings are the same as in [postgresql-single](../postgresql-single/README.md#backups-the-s3-bucket).
 
 Both servers run Rocky Linux 10. Change the types with `mysql_instance_type` and `pmm_instance_type` in `terraform.tfvars`, and the disks with `mysql_data_volume_size` and `mysql_backup_volume_size`.
@@ -47,7 +47,8 @@ ansible-playbook site.yml
 `terraform apply` also writes the SSH config (`~/.ssh/aws-mysql-single.conf`) and the Ansible inventory (`ansible/inventory.ini`). The playbook:
 - installs MySQL, PMM and the tools, and generates the lab passwords into `ansible/credentials/`;
 - registers MySQL in PMM;
-- creates the sysbench tables (about 2 GB, several minutes on the first run) and starts the load.
+- builds the sportsbook database with Liquibase. The first run also generates its data (about 1.5 GB), which starts in the background while PMM is still being installed;
+- starts the sportsbook application.
 
 ## Connect
 
@@ -66,8 +67,10 @@ ssh mysql-source             # MySQL, through the jump host
 | `sbtest` | the PMM server | the `sbtest` database | `mysql_sbtest_password` |
 | `pmm` | the server itself | read statistics, for PMM | `mysql_pmm_password` |
 | `backup` | the server itself (socket) | what XtraBackup needs and no more | `mysql_backup_password` |
+| `sb_migrator` | the PMM server | owns the `sportsbook` database, runs its migrations | `mysql_sb_migrator_password` |
+| `sb_app`, `sb_feed`, `sb_batch`, `sb_reporting`, `sb_support` | the PMM server | their role's privileges in `sportsbook` ([who may do what](../../schema/sportsbook/README.md#who-may-do-what)) | `mysql_sb_<name>_password` |
 
-`skip_name_resolve` is on, so accounts are matched by IP: `dba` and `sbtest` only from the PMM server's private IP.
+`skip_name_resolve` is on, so accounts are matched by IP: everyone but `root`, `pmm` and `backup` logs in only from the PMM server's private IP.
 
 ## How MySQL is set up
 
@@ -85,16 +88,26 @@ The settings are in `/etc/my.cnf.d/lab.cnf`, sized from the server's RAM and com
 
 PMM's Query Analytics reads the statements from the Performance Schema.
 
-## The load
+## The traffic: a sportsbook
 
-sysbench `oltp_read_write` runs on `mysql-pmm` as the service `sysbench-workload`. It runs 50 transactions a second over 8 connections; each transaction is 14 reads and 4 writes. Its 8 tables of 1,000,000 rows are about 2 GB, more than the buffer pool, so some reads go to disk.
+The [sportsbook application](../../tools/sportsbook/README.md) runs on `mysql-pmm` as the service `sportsbook-workload`:
+
+- **Players:** about 80 requests a second, more after each kick-off. They browse, follow live odds, log in, bet, cash out, deposit and withdraw.
+- **An odds feed:** matches kick off every 10 minutes and last 15. Odds move, goals suspend markets, and full time decides every bet.
+- **Batch jobs and reports:**
+  - settlement pays out the winners in one big transaction per match;
+  - withdrawals, bonuses and the leaderboard run on schedules;
+  - a regulatory report holds one snapshot open for 5 minutes.
 
 ```bash
-journalctl -u sysbench-workload -f      # one line per minute: tps, qps, latency, errors
-sudo systemctl stop sysbench-workload   # stop the load; start brings it back
+sportsbook load status                  # rates, live matches, running jobs
+sportsbook load kickoff 10              # kick off 10 matches now: the players surge
+journalctl -u sportsbook-workload -f
 ```
 
-Change the rate or the size with `sysbench_rate`, `sysbench_threads`, `sysbench_tables` and `sysbench_table_size` in `ansible/group_vars/pmm_server.yml`, then re-run the playbook. A new size needs the old tables removed first: `sysbench oltp_read_write --mysql-host=mysql-source ... cleanup`. The load keeps going through a MySQL restart: sysbench counts the errors and reconnects.
+Every bet, win, deposit and withdrawal is in the ledger, and the wallets always add up to it. The same check after a restore shows whether the restored copy is consistent ([the database](../../schema/sportsbook/README.md)).
+
+**sysbench on demand:** `ansible-playbook sysbench.yml` adds a synthetic `oltp_read_write` load in its own `sbtest` database (8 tables of 1,000,000 rows, 50 transactions a second), for example to compare throughput before and after a configuration change. `sudo systemctl stop sysbench-workload` on `mysql-pmm` stops it.
 
 ## Backups
 
@@ -120,7 +133,9 @@ It also deletes the backup bucket with everything in it, and removes the SSH con
 
 ## Not yet tested
 
-This lab has not been deployed yet. The first deploy checks three things:
+This lab has not been deployed yet. The first deploy checks:
 - **XtraBackup 8.4.0-7 and the newest Percona Server 8.4:** that XtraBackup accepts the server's version.
-- **sysbench over TLS:** its login with MySQL 8.4's default authentication.
 - **The generated passwords:** that the server accepts them as they are.
+- **The sportsbook's migrations and data** on a real MySQL, and how long the data takes to generate.
+- **The sportsbook application:** its traffic, the feed and the jobs under load, and the default rate a t3.small carries.
+- **sysbench over TLS** (on demand): its login with MySQL 8.4's default authentication.
