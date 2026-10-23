@@ -1,0 +1,33 @@
+# Managed by Ansible (role: prometheus_grafana). Re-running the playbook overwrites manual changes,
+# checks the file with promtool and restarts Prometheus.
+
+global:
+  scrape_interval: {{ prometheus_grafana_scrape_interval }}
+  evaluation_interval: {{ prometheus_grafana_scrape_interval }}
+
+scrape_configs:
+  # Prometheus itself and Grafana, in the same Compose project (Grafana's name there: grafana).
+  - job_name: prometheus
+    static_configs:
+      - targets: [localhost:9090]
+
+  - job_name: grafana
+    static_configs:
+      - targets: [grafana:3000]
+
+  # The lab's servers, found through the EC2 API by their Lab tag; the server's IAM role gives the access.
+  # Nothing to scrape yet: each exporter will get its own job (node_exporter 9100, mysqld_exporter 9104).
+  # Until then this job only lists the servers with their labels (Status > Service discovery) and drops them.
+  - job_name: ec2-discovery
+    ec2_sd_configs:
+      - region: {{ prometheus_grafana_ec2_region }}
+        refresh_interval: 60s
+        filters:
+          - name: tag:Lab
+            values: [{{ prometheus_grafana_ec2_lab }}]
+          - name: instance-state-name
+            values: [running]
+    relabel_configs:
+      - source_labels: [__meta_ec2_instance_id]
+        regex: .+
+        action: drop

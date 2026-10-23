@@ -32,6 +32,10 @@ sportsbook_db:
   support: { host: "{{ groups['mysql'][0] }}", user: sb_support, password: "{{ mysql_sb_support_password }}", database: sportsbook }
 sportsbook_pmm_password: "{{ pmm_admin_password }}"
 
+# Prometheus and Grafana next to PMM: Prometheus finds this lab's servers by their Lab tag.
+prometheus_grafana_ec2_lab: mysql-single
+prometheus_grafana_admin_password: "{{ grafana_admin_password }}"
+
 # sysbench, on demand (sysbench.yml): rate, size and test are the sysbench role's defaults.
 sysbench_mysql_host: "{{ groups['mysql'][0] }}"
 sysbench_mysql_password: "{{ mysql_sbtest_password }}"

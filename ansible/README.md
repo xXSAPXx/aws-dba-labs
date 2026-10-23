@@ -58,10 +58,11 @@ A variable that one play's role defines by default is not known in another play.
 
 | Role | Lives in | What it does |
 |---|---|---|
-| `common` | `ansible/roles/` | Hostname, `/etc/hosts` entries for every lab server, EPEL, admin tools |
+| `common` | `ansible/roles/` | Hostname, `/etc/hosts` entries for every lab server, EPEL, admin tools; turns off the Cockpit web console the Rocky images come with (port 9090) |
 | `data_volume` | `ansible/roles/` | Formats and mounts the database server's EBS volumes: the data volume, and extra ones such as a backup disk (before the database is installed) |
 | `percona_release` | `ansible/roles/` | Installs `percona-release`, which manages the Percona repositories |
 | `pmm_server` | `ansible/roles/` | Docker, the PMM 3 container, the PMM admin password |
+| `prometheus_grafana` | `ansible/roles/` | Prometheus and Grafana in Docker Compose next to PMM: Prometheus finds the lab's servers by their tags (EC2 service discovery), Grafana has it as its data source |
 | `pmm_client` | `ansible/roles/` | PMM client, registers the server with PMM, adds the databases to monitor; for PostgreSQL, [custom queries and a dashboard](roles/pmm_client/README.md) that record who blocks whom |
 | `postgresql_tools` | `ansible/roles/` | Tools on the database server. Live: pg_activity (overview of sessions, waits, blocking) and pg_top (per-PID query, EXPLAIN, locks). From the server log: pgBadger (report of slow statements, lock waits, errors) |
 | `postgresql_client` | `ansible/roles/` | psql and pgbench on the load generator, database passwords in `~/.pgpass` |

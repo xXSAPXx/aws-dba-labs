@@ -109,7 +109,16 @@ module "mysql_ec2_instance" {
 }
 
 
-# Create the EC2: (PMM Server + SSH jump host)
+# Monitoring: the PMM server's IAM role, so Prometheus (next to PMM) finds the lab's servers by their tags
+######################################################################################
+module "monitoring_role" {
+  source = "../../../modules/ec2_discovery_role"
+
+  name = "mysql-single-monitoring"
+}
+
+
+# Create the EC2: (PMM Server + SSH jump host + Prometheus and Grafana)
 ######################################################################################
 module "pmm_server" {
   source = "../../../modules/pmm_server"
@@ -118,6 +127,7 @@ module "pmm_server" {
   vpc_id                = module.vpc.vpc_id
   vpc_cidr_block        = module.vpc.vpc_cidr_block
   admin_cidr            = var.admin_cidr # Only your IP can reach SSH and the PMM UI.
+  extra_admin_ports     = [3000, 9090]   # Grafana and Prometheus, also from your IP only
   sec_group_name        = "PMM_Server_SG"
   sec_group_description = "Allow SSH / PMM Ports"
 
@@ -128,6 +138,8 @@ module "pmm_server" {
   key_name      = var.aws_key_pair
   subnet_id     = module.vpc.public_subnet_1_id
   pmm_tag_name  = "mysql-pmm"
+  # Its IAM role: read the EC2 instances, for Prometheus's service discovery
+  iam_instance_profile = module.monitoring_role.instance_profile_name
 
   # EBS Volume Settings:
   volume_size = var.pmm_volume_size

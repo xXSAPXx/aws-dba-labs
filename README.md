@@ -27,12 +27,14 @@ modules/              Shared Terraform modules, used by every lab
   pmm_server/         PMM 3 server instance, also the SSH jump host
   db_server/          A database server: instance, security group, data volume, optional backup volume
   iam_roles/          A database server's IAM role (instance profile): its folder of the backup bucket
+  ec2_discovery_role/ A monitoring server's IAM role (instance profile): list the EC2 instances, for Prometheus
   s3_for_backups/     S3 bucket for backups: versioned, encrypted, private, TLS only
 ansible/roles/        Shared Ansible roles, used by every lab (how it works: ansible/README.md)
-  common/             Hostname, /etc/hosts, EPEL, admin tools
+  common/             Hostname, /etc/hosts, EPEL, admin tools, Cockpit off
   data_volume/        Formats and mounts a database server's EBS volumes (data, backup)
   percona_release/    Percona repository tool
   pmm_server/         PMM 3 in Docker, admin password
+  prometheus_grafana/ Prometheus and Grafana in Docker next to PMM, EC2 service discovery
   pmm_client/         PMM client, registration, monitored services, lock blocking metrics
   postgresql_client/  psql and pgbench on the load generator
   mysql_client/       The MySQL client on the load generator, the admin login in ~/.my.cnf

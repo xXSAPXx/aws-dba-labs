@@ -43,6 +43,17 @@ resource "aws_security_group" "pmm_server_sg" {
     cidr_blocks = distinct([var.admin_cidr, var.vpc_cidr_block]) # Ping from outside and inside the VPC.
   }
 
+  # More UIs on this server (e.g. Grafana, Prometheus) from your IP:
+  dynamic "ingress" {
+    for_each = var.extra_admin_ports
+    content {
+      from_port   = ingress.value
+      to_port     = ingress.value
+      protocol    = "tcp"
+      cidr_blocks = [var.admin_cidr]
+    }
+  }
+
   egress {
     from_port   = 0
     to_port     = 0
@@ -62,6 +73,16 @@ resource "aws_instance" "pmm_server" {
   subnet_id              = var.subnet_id
   vpc_security_group_ids = [aws_security_group.pmm_server_sg.id]
   key_name               = var.key_name
+  # Its IAM role, if any (attached and changed without replacing the server)
+  iam_instance_profile = var.iam_instance_profile
+
+  # Instance metadata: IMDSv2 only, every request needs a session token. Hop limit 2: the token's reply
+  # also reaches containers, one hop further behind Docker's bridge (e.g. Prometheus reading its IAM
+  # role); with 1 it ends at the server itself.
+  metadata_options {
+    http_tokens                 = "required"
+    http_put_response_hop_limit = 2
+  }
 
   # Burstable types (t3...): "unlimited" never throttles and bills CPU above the baseline, "standard"
   # throttles when the CPU credits run out (a t3 starts with none). Other types don't take this setting.

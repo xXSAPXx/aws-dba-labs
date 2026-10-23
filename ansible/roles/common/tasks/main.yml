@@ -23,6 +23,21 @@
     group: root
     mode: "0644"
 
+# The Rocky Linux images come with Cockpit's web console on: systemd listens on port 9090 on every address for
+# it. The labs don't use it, the security groups never let anyone reach it, and 9090 is Prometheus's port (role:
+# prometheus_grafana). Off, as on a production server; on a server without Cockpit nothing changes.
+- name: Look for Cockpit's web console
+  ansible.builtin.stat:
+    path: /usr/lib/systemd/system/cockpit.socket
+  register: common_cockpit_socket
+
+- name: Turn off Cockpit's web console
+  ansible.builtin.systemd_service:
+    name: cockpit.socket
+    state: stopped
+    enabled: false
+  when: common_cockpit_socket.stat.exists
+
 # Rocky Linux: the official server instead of the mirror list. The list hands out mirrors at random and does
 # not check that they are current. One server got a BaseOS package list 11 days older than its AppStream
 # list, and a package whose parts are split between the two (vim) could not be installed. The official

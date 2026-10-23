@@ -2,6 +2,8 @@
 # Lab passwords: generated on the first run and kept in ./credentials/ (git-ignored).
 # PMM UI login: admin / $(cat credentials/pmm_admin_password)
 pmm_admin_password: "{{ lookup('ansible.builtin.password', playbook_dir ~ '/credentials/pmm_admin_password', length=24, chars=['ascii_letters', 'digits']) }}"
+# Grafana (next to PMM, port 3000) login: admin / $(cat credentials/grafana_admin_password)
+grafana_admin_password: "{{ lookup('ansible.builtin.password', playbook_dir ~ '/credentials/grafana_admin_password', length=24, chars=['ascii_letters', 'digits']) }}"
 mysql_root_password: "{{ lookup('ansible.builtin.password', playbook_dir ~ '/credentials/mysql_root_password', length=24, chars=['ascii_letters', 'digits']) }}"
 mysql_pmm_password: "{{ lookup('ansible.builtin.password', playbook_dir ~ '/credentials/mysql_pmm_password', length=24, chars=['ascii_letters', 'digits']) }}"
 mysql_dba_password: "{{ lookup('ansible.builtin.password', playbook_dir ~ '/credentials/mysql_dba_password', length=24, chars=['ascii_letters', 'digits']) }}"

@@ -1,0 +1,13 @@
+---
+# The configuration files are mounted into the containers: a changed file needs a restart to be read.
+- name: Restart Prometheus
+  community.docker.docker_compose_v2:
+    project_src: "{{ prometheus_grafana_dir }}"
+    services: [prometheus]
+    state: restarted
+
+- name: Restart Grafana
+  community.docker.docker_compose_v2:
+    project_src: "{{ prometheus_grafana_dir }}"
+    services: [grafana]
+    state: restarted

@@ -7,3 +7,5 @@ collections:
   - name: community.general
   - name: ansible.mysql
     version: ">=5.0.0"
+  - name: community.docker # docker_compose_v2, for Prometheus and Grafana
+    version: ">=3.6.0"
