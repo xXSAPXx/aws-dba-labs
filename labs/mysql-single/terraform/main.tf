@@ -83,10 +83,10 @@ module "mysql_role" {
 module "mysql_ec2_instance" {
   source = "../../../modules/db_server"
 
-  # --- Security group: SSH, MySQL and ping from the VPC ---
+  # --- Security group: SSH, MySQL, the exporters and ping from the VPC ---
   vpc_id                = module.vpc.vpc_id
   vpc_cidr_block        = module.vpc.vpc_cidr_block
-  db_ports              = [3306]
+  db_ports              = [3306, 9100, 9104] # MySQL, node_exporter, mysqld_exporter (for Prometheus on the PMM server)
   sec_group_name        = "MySQL_EC2_Instance_SG"
   sec_group_description = "Allow SSH / PMM and MySQL Ports"
 
