@@ -83,20 +83,11 @@
 # Apply the pending changesets (liquibase update):
 ##################################################################
 
-# The first run also generates the data (context "data"): minutes, so it runs in the background on the server.
-# Mode "background" (see defaults): the update waits for its database by itself, and a later play collects it.
-- name: Start the pending changesets in the background (liquibase update)
-  ansible.builtin.command: >-
-    {{ liquibase_dir }}/update-when-ready.sh {{ item.name }}
-    {{ (liquibase_update_mode == 'background') | ternary(liquibase_database_wait, 0) }}
-  async: 3600
-  poll: 0
-  loop: "{{ liquibase_projects }}"
-  loop_control:
-    label: "{{ item.name }}"
-  register: liquibase_update_jobs
-  changed_when: false # what it changed is reported when the result is collected
+# Mode "background" (see defaults): later plays start the update (start.yml) and collect it (finish.yml).
+- name: Start the updates
+  ansible.builtin.include_tasks: start.yml
+  when: liquibase_update_mode == 'wait'
 
 - name: Collect the updates
   ansible.builtin.include_tasks: finish.yml
-  when: liquibase_update_mode != 'background'
+  when: liquibase_update_mode == 'wait'

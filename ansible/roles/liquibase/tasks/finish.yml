@@ -1,5 +1,5 @@
 ---
-# Collects the updates that main.yml started. With liquibase_update_mode "background" a later play calls
+# Collects the updates that start.yml started. With liquibase_update_mode "background" a later play calls
 # this file by itself (import_role, tasks_from: finish.yml), on the same host and in the same playbook run.
 - name: Wait for the pending changesets (liquibase update)
   ansible.builtin.async_status:

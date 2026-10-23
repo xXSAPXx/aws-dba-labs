@@ -1,0 +1,17 @@
+---
+# Run the tools as root, which logs in over the socket with /root/.my.cnf (role: mysql):
+#   sudo -i dolphie
+
+- name: Install Dolphie in its own Python virtualenv
+  ansible.builtin.pip:
+    name: "{{ mysql_tools_dolphie_package }}"
+    virtualenv: "{{ mysql_tools_dolphie_venv }}"
+    virtualenv_command: python3 -m venv
+    state: present
+
+# /usr/local/bin is on PATH in every login shell, also after sudo -i (role: common).
+- name: Put Dolphie on PATH
+  ansible.builtin.file:
+    src: "{{ mysql_tools_dolphie_venv }}/bin/dolphie"
+    dest: /usr/local/bin/dolphie
+    state: link

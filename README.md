@@ -36,6 +36,7 @@ ansible/roles/        Shared Ansible roles, used by every lab (how it works: ans
   pmm_client/         PMM client, registration, monitored services, lock blocking metrics
   postgresql_client/  psql and pgbench on the load generator
   mysql_client/       The MySQL client on the load generator, the admin login in ~/.my.cnf
+  mysql_tools/        Tools on the MySQL server: Dolphie
   sysbench/           sysbench tables and a steady sysbench load as a service
   sportsbook/         The sportsbook application: players, odds feed, batch jobs, PMM metrics
   postgresql_tools/   Tools on the database server: pg_activity, pg_top, pgBadger

@@ -1,0 +1,18 @@
+---
+# Starts `liquibase update` for every project. main.yml calls this file in mode "wait"; with mode "background"
+# a later play calls it by itself (import_role, tasks_from: start.yml), once the database server is configured:
+# a database restart for a configuration change must not cut a running update off.
+#
+# The first run also generates the data (context "data"): minutes, so it runs in the background on the server.
+# In mode "background" the update first waits for its database by itself, and a later play collects it.
+- name: Start the pending changesets in the background (liquibase update)
+  ansible.builtin.command: >-
+    {{ liquibase_dir }}/update-when-ready.sh {{ item.name }}
+    {{ (liquibase_update_mode == 'background') | ternary(liquibase_database_wait, 0) }}
+  async: 3600
+  poll: 0
+  loop: "{{ liquibase_projects }}"
+  loop_control:
+    label: "{{ item.name }}"
+  register: liquibase_update_jobs
+  changed_when: false # what it changed is reported when the result is collected

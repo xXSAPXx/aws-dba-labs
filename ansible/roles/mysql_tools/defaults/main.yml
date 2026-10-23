@@ -1,0 +1,9 @@
+---
+# MySQL tools on the database servers.
+# Live:
+#   Dolphie: a terminal dashboard of the server in real time: processlist, transactions and locks, InnoDB,
+#   replication, and graphs of the server's metrics. Kill a query, explain it, record a session and replay it.
+
+# Dolphie has no RPM, so it's installed from PyPI into its own virtualenv, at a fixed version.
+mysql_tools_dolphie_venv: /opt/dolphie
+mysql_tools_dolphie_package: dolphie==6.18.0
