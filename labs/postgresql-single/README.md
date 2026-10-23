@@ -256,7 +256,7 @@ Terraform creates an S3 bucket for pgBackRest and gives `postgresql-source` an I
 | pgBackRest setting | Value |
 |---|---|
 | `repo1-type` | `s3` |
-| `repo1-s3-bucket` | `terraform output backup_bucket` (`aws-postgresql-lab-postgresql-single-<account id>`) |
+| `repo1-s3-bucket` | `terraform output backup_bucket` (`aws-dba-labs-postgresql-single-<account id>`) |
 | `repo1-s3-region` | `us-east-1` |
 | `repo1-s3-endpoint` | `s3.us-east-1.amazonaws.com` |
 | `repo1-s3-key-type` | `auto`: the credentials come from the server's IAM role |

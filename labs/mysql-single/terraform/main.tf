@@ -65,7 +65,7 @@ data "aws_caller_identity" "current" {}
 module "backup_bucket" {
   source = "../../../modules/s3_for_backups"
 
-  bucket_name = "aws-postgresql-lab-mysql-single-${data.aws_caller_identity.current.account_id}"
+  bucket_name = "aws-dba-labs-mysql-single-${data.aws_caller_identity.current.account_id}"
 }
 
 module "mysql_role" {

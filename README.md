@@ -1,4 +1,4 @@
-# aws-postgresql-lab
+# aws-dba-labs
 
 Hands-on database labs on AWS that simulate a production environment. Each lab is deployed with Terraform, put under load, broken and fixed like a real incident, then torn down so you only pay for the hours you use.
 
