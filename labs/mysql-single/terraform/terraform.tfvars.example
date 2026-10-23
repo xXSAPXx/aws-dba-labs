@@ -1,0 +1,26 @@
+
+# Copy this file to terraform.tfvars (ignored by .gitignore) in this directory and fill in your values:
+# TF_VARS:
+
+# Key pair for the EC2 instances
+aws_key_pair               = "<EXAMPLE>"
+
+# Your public IP with /32 (get it with: curl -s https://checkip.amazonaws.com). Only this IP can reach SSH and the PMM UI.
+admin_cidr                 = "203.0.113.10/32"
+
+# Optional: instance types (defaults: MySQL t3.small, PMM t3.medium; t2 is not supported by Rocky Linux 10).
+# For heavy load tests use a non-burstable type for MySQL, e.g. m7i.large.
+# mysql_instance_type      = "m7i.large"
+# pmm_instance_type        = "t3.medium"
+# pmm_volume_size          = 20            # GB, the PMM server's root disk
+
+# Optional: disk sizes in GB (gp3). Data: /var/lib/mysql (data and binlogs). Backup: /backup.
+# mysql_data_volume_size   = 20
+# mysql_backup_volume_size = 20
+
+# Optional: CPU credit mode of the t3 servers. Default "unlimited": never throttled, CPU above the t3 baseline
+# is billed (about a cent per hour with the default workload). "standard": fixed price, but throttled.
+# cpu_credits              = "standard"
+
+# Optional: private key of that key pair, used in the generated SSH config (~/.ssh/aws-mysql-single.conf).
+# ssh_private_key_path     = "~/.ssh/<key>"

@@ -50,7 +50,7 @@ A variable that one play's role defines by default is not known in another play.
 | Role | Lives in | What it does |
 |---|---|---|
 | `common` | `ansible/roles/` | Hostname, `/etc/hosts` entries for every lab server, EPEL, admin tools |
-| `data_volume` | `ansible/roles/` | Formats and mounts the database server's EBS data volume (before the database is installed) |
+| `data_volume` | `ansible/roles/` | Formats and mounts the database server's EBS volumes: the data volume, and extra ones such as a backup disk (before the database is installed) |
 | `percona_release` | `ansible/roles/` | Installs `percona-release`, which manages the Percona repositories |
 | `pmm_server` | `ansible/roles/` | Docker, the PMM 3 container, the PMM admin password |
 | `pmm_client` | `ansible/roles/` | PMM client, registers the server with PMM, adds the databases to monitor; for PostgreSQL, [custom queries and a dashboard](roles/pmm_client/README.md) that record who blocks whom |
@@ -59,6 +59,9 @@ A variable that one play's role defines by default is not known in another play.
 | `liquibase` | `ansible/roles/` | Java, Liquibase and the PostgreSQL JDBC driver on the PMM server; copies a changelog from the repo (e.g. `schema/shop`) and applies the pending migrations; `liquibase-<db>` wrapper command |
 | `labapp` | `ansible/roles/` | The lab's simulated application ([tools/labapp](../tools/labapp/README.md)): the availability probe and the shop workload as services, their metrics in PMM, the "Lab: Application" dashboard |
 | `postgresql` | `labs/postgresql-single/ansible/roles/` | Percona PostgreSQL 17, its configuration, pg_stat_monitor, the `pmm` monitoring user |
+| `mysql_client` | `ansible/roles/` | The MySQL client on the load generator, the admin login in `~/.my.cnf` |
+| `sysbench` | `ansible/roles/` | sysbench on the load generator: creates its tables once, then a steady load at a fixed rate as the `sysbench-workload` service |
+| `mysql` | `labs/mysql-single/ansible/roles/` | Percona Server for MySQL 8.4, its configuration (`/etc/my.cnf.d/lab.cnf`), the root password, users and databases; XtraBackup, MySQL Shell, Percona Toolkit and the AWS CLI for the backups |
 
 Roles in `ansible/roles/` are shared by every lab, like the Terraform modules in `modules/`. A role that only one lab needs lives in that lab's own `ansible/roles/`.
 

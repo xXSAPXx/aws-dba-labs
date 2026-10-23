@@ -1,0 +1,53 @@
+---
+# Lab: mysql-single. Run from this directory after `terraform apply`:
+#   ansible-playbook site.yml
+# Re-running it puts every server back into the known-good state.
+
+- name: Wait for the servers (right after terraform apply they may still be booting)
+  hosts: all
+  gather_facts: false
+  tasks:
+    - name: Wait for SSH
+      ansible.builtin.wait_for_connection:
+        timeout: 300
+
+# The two servers don't need each other for their own installation. With strategy "free" each one works
+# through its own list without waiting for the other at every step; the `when` picks each server's roles
+# by its group. The PMM server starts at once; only the MySQL server waits for the NAT gateway.
+- name: Set up the PMM server and the MySQL server, each at its own pace
+  hosts: all
+  become: true
+  strategy: ansible.builtin.free
+  pre_tasks:
+    # A new NAT gateway can take a minute or two before the private subnets reach the internet. One
+    # connection getting through does not mean it is stable yet, so the first downloads also try again.
+    # The PMM server has a public address of its own and passes this at once.
+    - name: Wait for internet access
+      ansible.builtin.wait_for:
+        host: dl.fedoraproject.org
+        port: 443
+        timeout: 300
+  roles:
+    - role: common
+    - role: pmm_server
+      when: "'pmm_server' in group_names"
+    - role: mysql_client # the mysql client on the PMM server, the application side
+      when: "'pmm_server' in group_names"
+    - role: data_volume # before MySQL is installed: its files go to the data disk; also mounts /backup
+      when: "'mysql' in group_names"
+    - role: mysql
+      when: "'mysql' in group_names"
+
+# From here on the steps need both servers: PMM must be running before a server registers with it,
+# and MySQL must be running before the load starts.
+- name: Register the MySQL server with PMM
+  hosts: mysql
+  become: true
+  roles:
+    - pmm_client
+
+- name: Load (runs on the PMM server)
+  hosts: pmm_server
+  become: true
+  roles:
+    - sysbench

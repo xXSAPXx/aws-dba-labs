@@ -1,0 +1,59 @@
+# Managed by Ansible (role: mysql). Re-running the playbook overwrites manual changes.
+# SET PERSIST (mysqld-auto.cnf in the data directory) still overrides these settings.
+# Sized for this server: {{ mysql_memory_mb }} MB RAM. The paths (datadir, socket, log-error) are in /etc/my.cnf.
+
+[mysqld]
+#------------------------------------------------------------------------------
+# Server and connections
+#------------------------------------------------------------------------------
+server_id = {{ mysql_server_id }}
+max_connections = {{ mysql_max_connections }}
+# Accounts are matched by IP, not by host name: no DNS lookup on every connection.
+skip_name_resolve = ON
+
+#------------------------------------------------------------------------------
+# InnoDB
+#------------------------------------------------------------------------------
+# MySQL's own cache of data and indexes, about half the RAM.
+innodb_buffer_pool_size = {{ mysql_buffer_pool_mb }}M
+# Room for the redo log (8.0.30+, files in #innodb_redo): larger means fewer checkpoints under write load.
+innodb_redo_log_capacity = {{ mysql_redo_log_capacity }}
+# Durable: every commit is on disk before the client hears "OK" (together with sync_binlog = 1).
+innodb_flush_log_at_trx_commit = 1
+# Background flushing, matched to the gp3 data volume (3000 IOPS); 8.4's default (10000) is for faster disks.
+innodb_io_capacity = {{ mysql_io_capacity }}
+innodb_io_capacity_max = {{ mysql_io_capacity | int * 2 }}
+# Every InnoDB metric counter, for PMM's InnoDB dashboards.
+innodb_monitor_enable = all
+
+#------------------------------------------------------------------------------
+# Binary log: directly in the data directory (/var/lib/mysql/mysql-bin.NNNNNN), as in production.
+# Needed for point-in-time recovery, the binlog backups and a replica later.
+#------------------------------------------------------------------------------
+log_bin = mysql-bin
+binlog_expire_logs_seconds = {{ mysql_binlog_expire_seconds }}
+# Each commit's binlog entry is on disk before the commit returns: no lost transactions after a crash.
+sync_binlog = 1
+# Global transaction IDs: a replica or a restore knows exactly which transactions it already has.
+gtid_mode = ON
+enforce_gtid_consistency = ON
+
+#------------------------------------------------------------------------------
+# Slow log and Performance Schema
+#------------------------------------------------------------------------------
+slow_query_log = ON
+long_query_time = 0.5
+log_slow_extra = ON
+# PMM Query Analytics reads the statements from the Performance Schema (--query-source=perfschema);
+# the history keeps example statements for it.
+performance_schema = ON
+performance_schema_consumer_events_statements_history_long = ON
+{% if mysql_settings_extra %}
+
+#------------------------------------------------------------------------------
+# Lab overrides (mysql_settings_extra): they win over the values above.
+#------------------------------------------------------------------------------
+{% for name, value in mysql_settings_extra.items() %}
+{{ name }} = {{ value }}
+{% endfor %}
+{% endif %}

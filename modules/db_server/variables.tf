@@ -1,6 +1,6 @@
 
 ##########################################
-# POSTGRESQL SECURITY GROUP VARIABLES
+# SECURITY GROUP
 ##########################################
 
 variable "vpc_id" {
@@ -10,25 +10,34 @@ variable "vpc_id" {
 
 variable "vpc_cidr_block" {
   type        = string
-  description = "VPC CIDR allowed to reach the instance (SSH / PostgreSQL / ping)"
+  description = "VPC CIDR allowed to reach the server (SSH / database ports / ping)"
+}
+
+variable "db_ports" {
+  type        = list(number)
+  description = "TCP ports of the database, open to the VPC, e.g. [5432] for PostgreSQL or [3306] for MySQL"
 }
 
 variable "sec_group_name" {
-  description = "Name for the PostgreSQL Instance Security Group"
   type        = string
-  default     = "PostgreSQL_EC2_Instance_SG"
+  description = "Name of the server's security group (unique in the VPC)"
 }
 
 variable "sec_group_description" {
-  description = "Description for the PostgreSQL Instance Security Group"
   type        = string
-  default     = "Allow SSH / PMM and PostgreSQL Ports"
+  description = "Description of the server's security group"
+  default     = "Allow SSH, the database ports and ping from the VPC"
 }
 
 
 ##########################################
-# POSTGRESQL EC2 INSTANCE VARIABLES
+# EC2 INSTANCE
 ##########################################
+
+variable "name" {
+  type        = string
+  description = "Name tag of the server, e.g. postgresql-source; its volumes are tagged <name>-data and <name>-backup"
+}
 
 variable "ami_id" {
   description = "AMI ID to launch the EC2 instance"
@@ -75,8 +84,13 @@ variable "volume_type" {
   default     = "gp3"
 }
 
+
+##########################################
+# DATA AND BACKUP VOLUMES
+##########################################
+
 variable "data_volume_size" {
-  description = "Data EBS volume size in GB (PostgreSQL data, mounted at /var/lib/pgsql)"
+  description = "Data EBS volume size in GB (the database's files)"
   type        = number
   default     = 20
 }
@@ -93,8 +107,8 @@ variable "data_volume_throughput" {
   default     = 125
 }
 
-variable "postgresql_tag_name" {
-  description = "Tags to apply to the EC2 instance"
-  type        = string
-  default     = "postgresql-source"
+variable "backup_volume_size" {
+  description = "Backup EBS volume size in GB (local copy of the backups before S3). 0: no backup volume"
+  type        = number
+  default     = 0
 }

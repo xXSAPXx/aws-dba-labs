@@ -3,7 +3,7 @@
 ########################################################################################################
 
 output "postgresql_ec2_instance_internal_ip" {
-  value = module.postgresql_ec2_instance.postgresql_ec2_instance_internal_ip
+  value = module.postgresql_ec2_instance.private_ip
 }
 
 output "pmm_server_public_ip" {

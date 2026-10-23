@@ -1,0 +1,47 @@
+---
+# Percona Server for MySQL 8.4 LTS and its backup tools, from the Percona repositories.
+mysql_repository: ps-84-lts
+mysql_extra_repositories:
+  - pxb-84-lts # Percona XtraBackup 8.4
+  - pt # Percona Toolkit
+
+mysql_packages:
+  - percona-server-server
+  - percona-server-client
+  - percona-xtrabackup-84 # physical backups: full and incremental, while MySQL runs
+  - percona-mysql-shell # logical backups: util.dumpInstance() / util.loadDump()
+  - percona-toolkit # pt-query-digest, pt-online-schema-change, pt-table-checksum...
+  - awscli2 # aws s3 cp/ls for the backup bucket; credentials come from the server's IAM role
+  - python3-PyMySQL # used by the ansible.mysql modules
+
+mysql_service: mysqld
+mysql_datadir: /var/lib/mysql
+mysql_socket: /var/lib/mysql/mysql.sock
+mysql_error_log: /var/log/mysqld.log
+
+# Configuration sizing (/etc/my.cnf.d/lab.cnf), computed from this server's RAM:
+mysql_memory_mb: "{{ ansible_facts['memtotal_mb'] }}"
+mysql_buffer_pool_mb: "{{ ((mysql_memory_mb | int * 0.5 / 128) | int) * 128 }}" # about half the RAM, in 128 MB steps
+mysql_max_connections: 200
+mysql_redo_log_capacity: 1G
+mysql_io_capacity: 1500 # background flushing; the data volume is gp3 with 3000 IOPS
+
+# Binary logs, directly in the data directory (/var/lib/mysql/mysql-bin.NNNNNN), as in production.
+mysql_server_id: 1
+mysql_binlog_expire_seconds: 259200 # 3 days
+
+# Extra settings written at the end of lab.cnf (they win over everything above). Example:
+#   mysql_settings_extra: { long_query_time: 0.1, innodb_print_all_deadlocks: "ON" }
+mysql_settings_extra: {}
+
+# Users and databases, set by the lab (group_vars). Example:
+#   mysql_users: [{ name: dba, host: 10.0.1.5, password: "...", priv: "*.*:ALL,GRANT" }]
+#   Optional per user: resource_limits, e.g. { MAX_USER_CONNECTIONS: 10 }
+#   mysql_databases: [sbtest]
+mysql_users: []
+mysql_databases: []
+
+# Backups: where they go on the server and in S3 (the lab sets mysql_backup_s3 from the Terraform outputs).
+mysql_backup_dir: /backup
+mysql_backup_s3: ""
+mysql_backup_s3_region: us-east-1

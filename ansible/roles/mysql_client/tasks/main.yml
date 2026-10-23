@@ -1,0 +1,24 @@
+---
+- name: Enable the Percona Server for MySQL repository
+  ansible.builtin.command: percona-release setup -y {{ mysql_client_repository }}
+  args:
+    creates: /usr/bin/mysql
+
+# PERCONA_TELEMETRY_DISABLE: Percona's packages would otherwise install and start a telemetry agent.
+- name: Install the MySQL client
+  ansible.builtin.dnf:
+    name: percona-server-client
+    state: present
+  environment:
+    PERCONA_TELEMETRY_DISABLE: "1"
+
+- name: Store the admin login (~/.my.cnf)
+  ansible.builtin.template:
+    src: my.cnf.j2
+    dest: "~{{ item }}/.my.cnf"
+    owner: "{{ item }}"
+    group: "{{ item }}"
+    mode: "0600"
+  loop: "{{ mysql_client_os_users }}"
+  when: mysql_client_login | length > 0
+  no_log: true

@@ -14,6 +14,7 @@ Hands-on database labs on AWS that simulate a production environment. Each lab i
 | Lab | What it deploys | Status |
 |---|---|---|
 | [postgresql-single](labs/postgresql-single/) | Percona PostgreSQL 17 + PMM 3 | Available |
+| [mysql-single](labs/mysql-single/) | Percona Server for MySQL 8.4 + PMM 3, sysbench load, backup disk and S3 bucket for XtraBackup and binlog backups | Built, first deploy pending |
 | postgresql-patroni | Patroni HA cluster with etcd, pgBackRest backups to S3 | Planned |
 | pxc | Percona XtraDB Cluster | Planned |
 | mongodb-replicaset | MongoDB replica set | Planned |
@@ -24,15 +25,18 @@ Hands-on database labs on AWS that simulate a production environment. Each lab i
 modules/              Shared Terraform modules, used by every lab
   vpc/                VPC, public + private subnets, NAT gateway, routing, S3 gateway endpoint
   pmm_server/         PMM 3 server instance, also the SSH jump host
+  db_server/          A database server: instance, security group, data volume, optional backup volume
   iam_roles/          A database server's IAM role (instance profile): its folder of the backup bucket
   s3_for_backups/     S3 bucket for backups: versioned, encrypted, private, TLS only
 ansible/roles/        Shared Ansible roles, used by every lab (how it works: ansible/README.md)
   common/             Hostname, /etc/hosts, EPEL, admin tools
-  data_volume/        Formats and mounts a database server's EBS data volume
+  data_volume/        Formats and mounts a database server's EBS volumes (data, backup)
   percona_release/    Percona repository tool
   pmm_server/         PMM 3 in Docker, admin password
   pmm_client/         PMM client, registration, monitored services, lock blocking metrics
   postgresql_client/  psql and pgbench on the load generator
+  mysql_client/       The MySQL client on the load generator, the admin login in ~/.my.cnf
+  sysbench/           sysbench tables and a steady sysbench load as a service
   postgresql_tools/   Tools on the database server: pg_activity, pg_top, pgBadger
   liquibase/          Applies a database's SQL migrations from the repo
   labapp/             The simulated application: availability probe, shop workload, PMM dashboard

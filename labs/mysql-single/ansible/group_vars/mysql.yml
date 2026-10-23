@@ -1,0 +1,56 @@
+---
+# MySQL's data and binlogs on their own EBS volume, the backups on another (Terraform creates both,
+# the data_volume role mounts them):
+data_volume_mount_point: /var/lib/mysql
+data_volume_extra_volumes:
+  - id: "{{ backup_volume_id }}"
+    mount_point: /backup
+
+# Backups: this server's folder in the lab's S3 bucket (bucket and region from the inventory).
+mysql_backup_s3: "s3://{{ backup_bucket }}/mysql"
+mysql_backup_s3_region: "{{ backup_bucket_region }}"
+
+# PMM monitors MySQL through the Performance Schema. pmm-agent runs on this server and connects to
+# 127.0.0.1:3306, so the pmm user is allowed from there (and from the socket, as localhost).
+pmm_client_services:
+  - type: mysql
+    name: "{{ inventory_hostname }}"
+    username: pmm
+    password: "{{ mysql_pmm_password }}"
+    extra_args: --query-source=perfschema
+
+# The PMM server's IP: the only place dba and sbtest may log in from (skip_name_resolve: accounts by IP).
+mysql_pmm_server_ip: "{{ hostvars[groups['pmm_server'][0]]['private_ip'] }}"
+
+mysql_databases:
+  - sbtest
+
+# Users. The applications run on the PMM server: sysbench, and your admin login dba.
+mysql_users:
+  # PMM: reads statistics, no data (PMM 3 documentation).
+  - name: pmm
+    host: localhost
+    password: "{{ mysql_pmm_password }}"
+    priv: "*.*:SELECT,PROCESS,REPLICATION CLIENT,RELOAD,BACKUP_ADMIN"
+    resource_limits: { MAX_USER_CONNECTIONS: 10 }
+  - name: pmm
+    host: 127.0.0.1
+    password: "{{ mysql_pmm_password }}"
+    priv: "*.*:SELECT,PROCESS,REPLICATION CLIENT,RELOAD,BACKUP_ADMIN"
+    resource_limits: { MAX_USER_CONNECTIONS: 10 }
+  # Your admin login over the network: mysql from the PMM server (password in its ~/.my.cnf).
+  - name: dba
+    host: "{{ mysql_pmm_server_ip }}"
+    password: "{{ mysql_dba_password }}"
+    priv: "*.*:ALL,GRANT"
+  # sysbench, only its own database.
+  - name: sbtest
+    host: "{{ mysql_pmm_server_ip }}"
+    password: "{{ mysql_sbtest_password }}"
+    priv: "sbtest.*:ALL"
+  # XtraBackup: the least privileges it needs (XtraBackup 8.4 documentation), only from this server.
+  - name: backup
+    host: localhost
+    password: "{{ mysql_backup_password }}"
+    priv: >-
+      *.*:BACKUP_ADMIN,PROCESS,RELOAD,LOCK TABLES,REPLICATION CLIENT/performance_schema.log_status:SELECT/performance_schema.keyring_component_status:SELECT/performance_schema.replication_group_members:SELECT

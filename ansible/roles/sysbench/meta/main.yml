@@ -1,0 +1,3 @@
+---
+dependencies:
+  - role: mysql_client # the mysql command, to check whether the tables exist

@@ -1,0 +1,67 @@
+---
+- name: Check that the lab set the database
+  ansible.builtin.assert:
+    that:
+      - sysbench_mysql_host | length > 0
+      - sysbench_mysql_password | length > 0
+    fail_msg: sysbench_mysql_host and sysbench_mysql_password must be set (group_vars).
+    quiet: true
+
+- name: Install sysbench
+  ansible.builtin.dnf:
+    name: sysbench
+    state: present
+
+# The connection settings, also used by the service (EnvironmentFile): the password stays out of the unit.
+- name: Write the connection settings
+  ansible.builtin.template:
+    src: sysbench.env.j2
+    dest: /etc/{{ sysbench_service }}.env
+    owner: root
+    group: root
+    mode: "0600"
+  notify: Restart the sysbench workload
+  no_log: true
+
+- name: Count the sysbench tables that exist
+  ansible.builtin.shell: |
+    set -o pipefail
+    . /etc/{{ sysbench_service }}.env
+    MYSQL_PWD="$SYSBENCH_MYSQL_PASSWORD" mysql -h "$SYSBENCH_MYSQL_HOST" -P "$SYSBENCH_MYSQL_PORT" -u "$SYSBENCH_MYSQL_USER" -N -e \
+      "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = '$SYSBENCH_MYSQL_DB' AND table_name LIKE 'sbtest%'"
+  args:
+    executable: /bin/bash
+  register: sysbench_tables_found
+  changed_when: false
+
+# Only when the tables are missing or incomplete (e.g. an interrupted first run): cleanup, then prepare.
+# Several minutes for the default size; the service waits until it is done.
+- name: Create and fill the sysbench tables
+  ansible.builtin.shell: |
+    set -o pipefail
+    . /etc/{{ sysbench_service }}.env
+    sysbench_args=( "$SYSBENCH_TEST" --mysql-host="$SYSBENCH_MYSQL_HOST" --mysql-port="$SYSBENCH_MYSQL_PORT"
+                    --mysql-user="$SYSBENCH_MYSQL_USER" --mysql-password="$SYSBENCH_MYSQL_PASSWORD" --mysql-db="$SYSBENCH_MYSQL_DB"
+                    --mysql-ssl="$SYSBENCH_MYSQL_SSL" --tables="$SYSBENCH_TABLES" --table-size="$SYSBENCH_TABLE_SIZE" )
+    sysbench "${sysbench_args[@]}" cleanup > /dev/null
+    sysbench "${sysbench_args[@]}" --threads="$SYSBENCH_TABLES" prepare | tail -n 3
+  args:
+    executable: /bin/bash
+  when: sysbench_tables_found.stdout | int != sysbench_tables | int
+  changed_when: true
+
+- name: Install the sysbench workload service
+  ansible.builtin.template:
+    src: sysbench-workload.service.j2
+    dest: /etc/systemd/system/{{ sysbench_service }}.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart the sysbench workload
+
+- name: Start the sysbench workload
+  ansible.builtin.systemd_service:
+    name: "{{ sysbench_service }}"
+    state: started
+    enabled: true
+    daemon_reload: true

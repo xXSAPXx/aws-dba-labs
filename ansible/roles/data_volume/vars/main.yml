@@ -1,3 +1,0 @@
----
-# On Nitro instances EBS volumes are NVMe disks; the volume ID (without the dash) is in their stable device name.
-data_volume_device: "/dev/disk/by-id/nvme-Amazon_Elastic_Block_Store_{{ data_volume_id | replace('-', '') }}"

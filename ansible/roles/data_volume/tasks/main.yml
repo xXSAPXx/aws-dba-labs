@@ -4,28 +4,51 @@
     that:
       - data_volume_id | length > 0
       - data_volume_mount_point | length > 0
-    fail_msg: data_volume_id (inventory) and data_volume_mount_point (group_vars) must be set.
+      - data_volume_extra_volumes | rejectattr('id') | list | length == 0
+    fail_msg: data_volume_id (inventory) and data_volume_mount_point (group_vars) must be set, and every extra volume needs an id.
     quiet: true
 
-- name: Wait for the data volume to appear
+- name: List the volumes to mount
+  ansible.builtin.set_fact:
+    data_volume_list: "{{ [{'id': data_volume_id, 'mount_point': data_volume_mount_point}] + data_volume_extra_volumes }}"
+
+# On Nitro instances EBS volumes are NVMe disks; the volume ID (without the dash) is in their stable device name.
+- name: Wait for the volumes to appear
   ansible.builtin.wait_for:
-    path: "{{ data_volume_device }}"
+    path: "/dev/disk/by-id/nvme-Amazon_Elastic_Block_Store_{{ item.id | replace('-', '') }}"
     timeout: 120
+  loop: "{{ data_volume_list }}"
+  loop_control:
+    label: "{{ item.mount_point }}"
 
-- name: Create the filesystem (only on an empty volume)
+- name: Create the filesystems (only on an empty volume)
   community.general.filesystem:
-    dev: "{{ data_volume_device }}"
+    dev: "/dev/disk/by-id/nvme-Amazon_Elastic_Block_Store_{{ item.id | replace('-', '') }}"
     fstype: "{{ data_volume_fstype }}"
+  loop: "{{ data_volume_list }}"
+  loop_control:
+    label: "{{ item.mount_point }}"
 
-- name: Mount the data volume (also added to /etc/fstab)
+- name: Mount the volumes (also added to /etc/fstab)
   ansible.posix.mount:
-    path: "{{ data_volume_mount_point }}"
-    src: "{{ data_volume_device }}"
+    path: "{{ item.mount_point }}"
+    src: "/dev/disk/by-id/nvme-Amazon_Elastic_Block_Store_{{ item.id | replace('-', '') }}"
     fstype: "{{ data_volume_fstype }}"
     opts: "{{ data_volume_mount_options }}"
     state: mounted
-  notify: Restore the SELinux labels of the mount point
+  loop: "{{ data_volume_list }}"
+  loop_control:
+    label: "{{ item.mount_point }}"
+  register: data_volume_mounts
 
-# Before the next roles install the database onto the volume.
-- name: Label a newly mounted volume now
-  ansible.builtin.meta: flush_handlers
+# A new filesystem has no SELinux labels; the database (confined by SELinux) needs the ones for its path.
+# Done now, before the next roles install the database onto the volume, and per volume: a handler would
+# not know which of the mounts changed.
+- name: Restore the SELinux labels of newly mounted volumes # noqa: no-handler
+  ansible.builtin.command: restorecon -Rv {{ item.item.mount_point }}
+  loop: "{{ data_volume_mounts.results }}"
+  loop_control:
+    label: "{{ item.item.mount_point }}"
+  when: item is changed
+  register: data_volume_restorecon
+  changed_when: data_volume_restorecon.stdout | length > 0
