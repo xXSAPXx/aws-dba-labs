@@ -1,0 +1,22 @@
+{{ {
+  'rate': sportsbook_rate,
+  'workers': sportsbook_workers,
+  'timeout': sportsbook_timeout,
+  'metrics_address': '0.0.0.0',
+  'metrics_port': sportsbook_metrics_port,
+  'control_port': sportsbook_control_port,
+  'db': sportsbook_db,
+  'session': sportsbook_session,
+  'mix': sportsbook_mix,
+  'surge_mix': sportsbook_surge_mix,
+  'wave': sportsbook_wave,
+  'surge': sportsbook_surge,
+  'feed': sportsbook_feed,
+  'jobs': sportsbook_jobs,
+  'grafana': {
+    'url': sportsbook_pmm_url ~ '/graph',
+    'user': sportsbook_pmm_user,
+    'password': sportsbook_pmm_password,
+    'verify_tls': false,
+  },
+} | to_nice_json }}

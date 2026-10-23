@@ -23,10 +23,44 @@ pmm_client_services:
 mysql_pmm_server_ip: "{{ hostvars[groups['pmm_server'][0]]['private_ip'] }}"
 
 mysql_databases:
-  - sbtest
+  - sportsbook # the sportsbook application (schema/sportsbook)
+  - sbtest # sysbench, on demand (sysbench.yml)
 
-# Users. The applications run on the PMM server: sysbench, and your admin login dba.
+# The sportsbook's roles: their privileges are granted by the database migrations (schema/sportsbook/changes/0008-access.sql).
+mysql_roles:
+  - { name: sportsbook_app, members: ["sb_app@{{ mysql_pmm_server_ip }}"] }
+  - { name: sportsbook_feed, members: ["sb_feed@{{ mysql_pmm_server_ip }}"] }
+  - { name: sportsbook_batch, members: ["sb_batch@{{ mysql_pmm_server_ip }}"] }
+  - { name: sportsbook_reporting, members: ["sb_reporting@{{ mysql_pmm_server_ip }}"] }
+  - { name: sportsbook_support, members: ["sb_support@{{ mysql_pmm_server_ip }}"] }
+
+# Users. The applications run on the PMM server: the sportsbook, sysbench, and your admin login dba.
 mysql_users:
+  # The sportsbook: the migrations (Liquibase) own the database; the other users only get their role.
+  - name: sb_migrator
+    host: "{{ mysql_pmm_server_ip }}"
+    password: "{{ mysql_sb_migrator_password }}"
+    priv: "sportsbook.*:ALL,GRANT"
+  - name: sb_app
+    host: "{{ mysql_pmm_server_ip }}"
+    password: "{{ mysql_sb_app_password }}"
+    resource_limits: { MAX_USER_CONNECTIONS: 60 }
+  - name: sb_feed
+    host: "{{ mysql_pmm_server_ip }}"
+    password: "{{ mysql_sb_feed_password }}"
+    resource_limits: { MAX_USER_CONNECTIONS: 5 }
+  - name: sb_batch
+    host: "{{ mysql_pmm_server_ip }}"
+    password: "{{ mysql_sb_batch_password }}"
+    resource_limits: { MAX_USER_CONNECTIONS: 10 }
+  - name: sb_reporting
+    host: "{{ mysql_pmm_server_ip }}"
+    password: "{{ mysql_sb_reporting_password }}"
+    resource_limits: { MAX_USER_CONNECTIONS: 5 }
+  - name: sb_support
+    host: "{{ mysql_pmm_server_ip }}"
+    password: "{{ mysql_sb_support_password }}"
+    resource_limits: { MAX_USER_CONNECTIONS: 5 }
   # PMM: reads statistics, no data (PMM 3 documentation).
   - name: pmm
     host: localhost

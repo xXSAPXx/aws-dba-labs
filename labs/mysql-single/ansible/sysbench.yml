@@ -1,0 +1,13 @@
+---
+# sysbench on demand: a synthetic benchmark load next to (or instead of) the sportsbook, e.g. to compare
+# throughput before and after a configuration change. Run from this directory:
+#   ansible-playbook sysbench.yml
+# The first run creates 8 tables of 1,000,000 rows in the sbtest database (about 2 GB, several minutes), then
+# starts the sysbench-workload service at 50 transactions per second. Stop it on the PMM server with:
+#   sudo systemctl stop sysbench-workload
+
+- name: Load with sysbench (runs on the PMM server)
+  hosts: pmm_server
+  become: true
+  roles:
+    - sysbench

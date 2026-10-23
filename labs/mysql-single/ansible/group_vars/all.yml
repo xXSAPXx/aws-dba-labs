@@ -7,3 +7,14 @@ mysql_pmm_password: "{{ lookup('ansible.builtin.password', playbook_dir ~ '/cred
 mysql_dba_password: "{{ lookup('ansible.builtin.password', playbook_dir ~ '/credentials/mysql_dba_password', length=24, chars=['ascii_letters', 'digits']) }}"
 mysql_sbtest_password: "{{ lookup('ansible.builtin.password', playbook_dir ~ '/credentials/mysql_sbtest_password', length=24, chars=['ascii_letters', 'digits']) }}"
 mysql_backup_password: "{{ lookup('ansible.builtin.password', playbook_dir ~ '/credentials/mysql_backup_password', length=24, chars=['ascii_letters', 'digits']) }}"
+# The sportsbook application (schema/sportsbook, tools/sportsbook): one user per part of the application.
+mysql_sb_migrator_password: "{{ lookup('ansible.builtin.password', playbook_dir ~ '/credentials/mysql_sb_migrator_password', length=24, chars=['ascii_letters', 'digits']) }}"
+mysql_sb_app_password: "{{ lookup('ansible.builtin.password', playbook_dir ~ '/credentials/mysql_sb_app_password', length=24, chars=['ascii_letters', 'digits']) }}"
+mysql_sb_feed_password: "{{ lookup('ansible.builtin.password', playbook_dir ~ '/credentials/mysql_sb_feed_password', length=24, chars=['ascii_letters', 'digits']) }}"
+mysql_sb_batch_password: "{{ lookup('ansible.builtin.password', playbook_dir ~ '/credentials/mysql_sb_batch_password', length=24, chars=['ascii_letters', 'digits']) }}"
+mysql_sb_reporting_password: "{{ lookup('ansible.builtin.password', playbook_dir ~ '/credentials/mysql_sb_reporting_password', length=24, chars=['ascii_letters', 'digits']) }}"
+mysql_sb_support_password: "{{ lookup('ansible.builtin.password', playbook_dir ~ '/credentials/mysql_sb_support_password', length=24, chars=['ascii_letters', 'digits']) }}"
+
+# Size of the generated sportsbook data: 1 = 100,000 players and 1,000,000 bets (about 1.5 GB).
+# Used only when the data is first generated.
+sportsbook_scale: 1

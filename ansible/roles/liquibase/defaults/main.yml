@@ -5,10 +5,15 @@ liquibase_checksum: sha256:bb08638d70dddd6af8cca6e033148576f8214b5996831b1f8864e
 liquibase_download_url: https://github.com/liquibase/liquibase/releases/download/v{{ liquibase_version }}/liquibase-{{ liquibase_version }}.tar.gz
 liquibase_java_package: java-21-openjdk-headless # Liquibase 5 needs Java 17 or newer
 
-# Liquibase 5 ships no PostgreSQL driver: the official, self-contained JDBC driver from Maven Central.
-liquibase_jdbc_version: 42.7.14
-liquibase_jdbc_checksum: sha256:73914527305a40cce504b0d3d90b23caf565136912d607ae8ae7c5895512332c
-liquibase_jdbc_download_url: https://repo1.maven.org/maven2/org/postgresql/postgresql/{{ liquibase_jdbc_version }}/postgresql-{{ liquibase_jdbc_version }}.jar
+# Liquibase 5 ships no database drivers: the official JDBC drivers the lab's databases need, from Maven Central,
+# checksum verified. The default is PostgreSQL's; a MySQL lab sets its own list (group_vars). Example:
+#   - file: mysql-connector-j-26.7.0.jar
+#     url: https://repo1.maven.org/maven2/com/mysql/mysql-connector-j/26.7.0/mysql-connector-j-26.7.0.jar
+#     checksum: sha256:...
+liquibase_jdbc_drivers:
+  - file: postgresql-42.7.14.jar
+    url: https://repo1.maven.org/maven2/org/postgresql/postgresql/42.7.14/postgresql-42.7.14.jar
+    checksum: sha256:73914527305a40cce504b0d3d90b23caf565136912d607ae8ae7c5895512332c
 
 liquibase_dir: /opt/liquibase
 liquibase_projects_dir: /opt/liquibase-projects

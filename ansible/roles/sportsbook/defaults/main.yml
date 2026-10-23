@@ -1,0 +1,59 @@
+---
+# sportsbook: a sportsbook's production traffic on MySQL (tools/sportsbook). Runs on the PMM server, like an
+# application server, against the sportsbook database (schema/sportsbook).
+sportsbook_dir: /opt/sportsbook
+sportsbook_user: sportsbook
+sportsbook_source_dir: "{{ role_path }}/../../../tools/sportsbook"
+sportsbook_files: [sportsbook.py, common.py, workload.py]
+sportsbook_python_packages:
+  # [rsa]: MySQL 8's default login (caching_sha2_password) over a connection without TLS needs the server's RSA key.
+  - PyMySQL[rsa]>=1.1
+  - prometheus_client>=0.20
+
+sportsbook_rate: 80 # base requests per second (live: sportsbook load rate N)
+sportsbook_workers: 32 # connections as sb_app
+sportsbook_timeout: 5 # seconds to connect
+sportsbook_metrics_port: 9312
+sportsbook_control_port: 9311 # 127.0.0.1 only, used by `sportsbook load`
+sportsbook_metrics_host: "{{ private_ip }}" # PMM (in its container) collects the metrics over the host's private IP
+
+# One connection per part of the application, set by the lab (group_vars): app, feed, batch, reporting. Example:
+#   app: { host: mysql-source, user: sb_app, password: "...", database: sportsbook }
+sportsbook_db: {}
+
+# SET SESSION on every connect, per part, like an application's connection pool settings.
+sportsbook_session:
+  app: { innodb_lock_wait_timeout: 3, max_execution_time: 5000 } # a player waits at most 3 s for a lock, 5 s for a page
+  feed: { innodb_lock_wait_timeout: 5 }
+  batch: { innodb_lock_wait_timeout: 10 }
+  reporting: { max_execution_time: 0 } # reports may run long
+
+# Transaction mix (weights), normal and right after a kick-off; empty = the defaults in tools/sportsbook/workload.py.
+sportsbook_mix: {}
+sportsbook_surge_mix: {}
+
+# Cycles sized for a 1-2 hour lab session (seconds).
+sportsbook_wave: { period: 3600, amplitude: 0.4 } # a "day" every hour: +-40% around the base rate
+sportsbook_surge: { multiplier: 3, duration: 120 } # after each kick-off: 3x the players for 2 minutes
+sportsbook_feed:
+  kickoff_first: 60 # first kick-off after the start
+  kickoff_every: 600 # then every 10 minutes
+  kickoff_matches: 6 # matches per kick-off
+  match_seconds: 900 # a match lasts 15 minutes (lab time)
+  goals_per_match: 2.6
+  suspend_seconds: 15 # markets closed after a goal
+  odds_moves_per_second: 15
+  fixtures_min: 300 # new fixtures when fewer are scheduled
+sportsbook_jobs:
+  settlement: { every: 30, first: 30, mode: single_transaction, batch_size: 500 } # or: batched
+  withdrawals: { every: 120, first: 90, batch_size: 200 }
+  bonus_awards: { every: 600, first: 300, promotion_id: 1, max_players: 2000 }
+  leaderboard: { every: 300, first: 120 }
+  session_cleanup: { every: 600, first: 450, batch_size: 5000 }
+  regulatory_report: { every: 900, first: 420, target: 300 } # ~5 min in one REPEATABLE READ snapshot
+
+# PMM server on this host: the metrics registration, and Grafana for the annotations.
+sportsbook_pmm_url: https://127.0.0.1
+sportsbook_pmm_container: pmm-server
+sportsbook_pmm_user: admin
+sportsbook_pmm_password: "" # set by the lab, required
