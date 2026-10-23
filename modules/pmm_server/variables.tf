@@ -18,6 +18,12 @@ variable "admin_cidr" {
   description = "Your public IP in CIDR form. Only this range can reach SSH and the PMM UI"
 }
 
+variable "extra_admin_ports" {
+  type        = list(number)
+  description = "More TCP ports open to admin_cidr only, e.g. [3000, 9090] for Grafana and Prometheus next to PMM"
+  default     = []
+}
+
 variable "sec_group_name" {
   description = "Name for the PMM Server Security Group"
   type        = string
@@ -56,10 +62,11 @@ variable "key_name" {
   type        = string
 }
 
-#variable "iam_instance_profile" {
-#  description = "IAM Role for the Prometheus Automatic Service Discovery"
-#  type        = string
-#}
+variable "iam_instance_profile" {
+  description = "Instance profile (IAM role) of the server, e.g. for Prometheus's EC2 service discovery. null: none"
+  type        = string
+  default     = null
+}
 
 variable "volume_size" {
   description = "EBS Volume GBs Size"

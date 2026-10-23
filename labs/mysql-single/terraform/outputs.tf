@@ -19,6 +19,16 @@ output "pmm_url" {
   value = "https://${module.pmm_server.pmm_server_public_ip}"
 }
 
+# Grafana: log in as admin with the password from ../ansible/credentials/grafana_admin_password
+output "grafana_url" {
+  value = "http://${module.pmm_server.pmm_server_public_ip}:3000"
+}
+
+# Prometheus: no login, reachable from your IP only (admin_cidr)
+output "prometheus_url" {
+  value = "http://${module.pmm_server.pmm_server_public_ip}:9090"
+}
+
 # Backups: where the server may write in S3 (its IAM role gives the credentials, no keys on the server)
 output "backup_bucket" {
   value = module.backup_bucket.bucket_name

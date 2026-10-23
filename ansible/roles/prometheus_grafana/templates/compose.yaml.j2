@@ -1,0 +1,40 @@
+# Managed by Ansible (role: prometheus_grafana). Re-running the playbook overwrites manual changes.
+#   cd {{ prometheus_grafana_dir }} && docker compose ps        the containers
+#   docker logs prometheus / docker logs grafana                their logs
+name: prometheus-grafana
+
+services:
+  prometheus:
+    image: {{ prometheus_grafana_prometheus_image }}
+    container_name: prometheus
+    restart: always
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time={{ prometheus_grafana_retention }}
+    ports:
+      - "{{ prometheus_grafana_prometheus_port }}:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+
+  grafana:
+    image: {{ prometheus_grafana_grafana_image }}
+    container_name: grafana
+    restart: always
+    environment:
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES: "false"
+    env_file: grafana.env # the admin password
+    ports:
+      - "{{ prometheus_grafana_grafana_port }}:3000"
+    volumes:
+      # Only the data sources: the image's other provisioning folders (dashboards, alerting, plugins) stay.
+      - ./grafana-provisioning/datasources:/etc/grafana/provisioning/datasources:ro
+      - grafana-data:/var/lib/grafana
+
+volumes:
+  prometheus-data:
+  grafana-data:

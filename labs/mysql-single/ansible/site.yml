@@ -35,6 +35,8 @@
         liquibase_update_mode: background
     - role: pmm_server
       when: "'pmm_server' in group_names"
+    - role: prometheus_grafana # next to PMM, in Docker (which pmm_server installs)
+      when: "'pmm_server' in group_names"
     - role: mysql_client # the mysql client on the PMM server, the application side
       when: "'pmm_server' in group_names"
     - role: data_volume # before MySQL is installed: its files go to the data disk; also mounts /backup
