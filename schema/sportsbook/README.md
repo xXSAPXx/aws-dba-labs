@@ -56,7 +56,7 @@ The first deploy generates it (Liquibase context `data`); `sportsbook_scale` (de
 | Bets | 1,000,000: 70% singles, the rest accumulators of 2-4 legs; settled as their matches ended |
 | Ledger rows | about 1.5 million: a deposit per player, every stake and win, and withdrawals |
 
-About 1.5 GB. The ids follow from each other, so every step finds the rows of the previous one by arithmetic: match `e` has markets `(e - 1) * 3 + 1 .. 3` and selections `(e - 1) * 7 + 1 .. 7`. A helper table of the numbers 1 to 1,000,000 (`seq`) generates the rows, since MySQL has no `generate_series`; it is dropped at the end.
+About 1 GB: the ledger (360 MB), the bets (310 MB) and their legs (240 MB) are most of it. The ids follow from each other, so every step finds the rows of the previous one by arithmetic: match `e` has markets `(e - 1) * 3 + 1 .. 3` and selections `(e - 1) * 7 + 1 .. 7`. A helper table of the numbers 1 to 1,000,000 (`seq`) generates the rows, since MySQL has no `generate_series`; it is dropped at the end.
 
 ## A new migration
 

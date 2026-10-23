@@ -17,9 +17,11 @@ variable "admin_cidr" {
 
 # Instance types: Rocky Linux 10 needs x86-64-v3 CPUs, so use a current (Nitro) type such as t3 or m7i, not t2.
 # t3 is burstable (see cpu_credits below). For heavy load tests use a non-burstable type, e.g. m7i.large (2 vCPU, 8 GB).
+# MySQL needs 4 GB: InnoDB keeps its cache in its own memory (the buffer pool, half the RAM), and MySQL's fixed
+# overhead (Performance Schema, log buffer) is about 0.5 GB. On a t3.small (2 GB) it idles at 1.26 GB of 1.7.
 variable "mysql_instance_type" {
   type        = string
-  default     = "t3.small"
+  default     = "t3.medium"
   description = "EC2 instance type of the MySQL server"
 
   validation {

@@ -7,7 +7,7 @@ A replica and ProxySQL come later; the binlogs and GTIDs are already on for them
 ## What it deploys
 
 - **VPC** `10.0.1.0/24`: one public subnet, two private subnets in two availability zones, and a NAT gateway. It does not overlap with postgresql-single, so both labs can run at the same time.
-- **mysql-source**: Percona Server for MySQL 8.4 in private subnet 1, on a t3.small. Two extra encrypted gp3 disks:
+- **mysql-source**: Percona Server for MySQL 8.4 in private subnet 1, on a t3.medium (4 GB: unlike PostgreSQL, MySQL keeps its cache in its own memory, so 2 GB is too little). Two extra encrypted gp3 disks:
   - **`/var/lib/mysql`** (20 GB): the data and the binlogs, as on the production servers.
   - **`/backup`** (20 GB): a local copy of the backups before they go to S3.
   
@@ -17,7 +17,7 @@ A replica and ProxySQL come later; the binlogs and GTIDs are already on for them
 
 Both servers run Rocky Linux 10. Change the types with `mysql_instance_type` and `pmm_instance_type` in `terraform.tfvars`, and the disks with `mysql_data_volume_size` and `mysql_backup_volume_size`.
 
-**Cost:** about $0.12 per hour in us-east-1 while the lab runs (NAT gateway $0.045, t3.medium $0.042, t3.small $0.021, two public IPs $0.010, 70 GB of gp3 disks $0.008). CPU above the t3 baseline adds a few cents per hour with the default load. Backups in S3 cost $0.023 per GB-month: cents for a lab session. Always run `terraform destroy` when you're done.
+**Cost:** about $0.15 per hour in us-east-1 while the lab runs (NAT gateway $0.045, two t3.medium $0.083, two public IPs $0.010, 70 GB of gp3 disks $0.008). CPU above the t3 baseline adds a few cents per hour with the default load. Backups in S3 cost $0.023 per GB-month: cents for a lab session. Always run `terraform destroy` when you're done.
 
 ## Before your first deploy
 
@@ -47,7 +47,7 @@ ansible-playbook site.yml
 `terraform apply` also writes the SSH config (`~/.ssh/aws-mysql-single.conf`) and the Ansible inventory (`ansible/inventory.ini`). The playbook:
 - installs MySQL, PMM and the tools, and generates the lab passwords into `ansible/credentials/`;
 - registers MySQL in PMM;
-- builds the sportsbook database with Liquibase. The first run also generates its data (about 1.5 GB), which starts in the background while PMM is still being installed;
+- builds the sportsbook database with Liquibase. The first run also generates its data (about 1 GB), which starts in the background while PMM is still being installed;
 - starts the sportsbook application.
 
 ## Connect
@@ -83,8 +83,10 @@ The settings are in `/etc/my.cnf.d/lab.cnf`, sized from the server's RAM and com
 | GTIDs | on (`gtid_mode`, `enforce_gtid_consistency`), ready for a replica |
 | Error log | `/var/log/mysqld.log` |
 | Slow log | `/var/lib/mysql/mysql-source-slow.log`, statements over 0.5 s |
-| Buffer pool | about half the RAM |
+| Buffer pool | about half the RAM (1.6 GB on the t3.medium: the 1 GB of sportsbook data fits) |
+| Temporary tables | `temptable_max_ram` about 1/16 of the RAM (192 MB), instead of 8.4's default of at least 1 GB, which stalled a 2 GB server |
 | Durability | `innodb_flush_log_at_trx_commit = 1` and `sync_binlog = 1` |
+| Password policy | `validate_password` on, policy `LOW`: 8 characters or more. MEDIUM (the default) also requires a digit, both cases and a special character, which the generated passwords may lack |
 
 PMM's Query Analytics reads the statements from the Performance Schema.
 
@@ -131,11 +133,18 @@ terraform destroy
 
 It also deletes the backup bucket with everything in it, and removes the SSH config and the inventory.
 
-## Not yet tested
+## Tested
 
-This lab has not been deployed yet. The first deploy checks:
-- **XtraBackup 8.4.0-7 and the newest Percona Server 8.4:** that XtraBackup accepts the server's version.
-- **The generated passwords:** that the server accepts them as they are.
-- **The sportsbook's migrations and data** on a real MySQL, and how long the data takes to generate.
-- **The sportsbook application:** its traffic, the feed and the jobs under load, and the default rate a t3.small carries.
+The first deploy (23 October 2026, Percona Server 8.4.11-11 on a t3.medium) checked:
+- **XtraBackup 8.4.0-7** backs up the newer server as the `backup` user: a full backup in 14 seconds, under load. Prepare and restore are yours to practise.
+- **The sportsbook's migrations and data:** all 47 changesets, about 1 GB.
+- **The sportsbook application,** over a full match cycle:
+  - 80 requests a second plus the kick-off surges, 99.99% of them under 0.5 s;
+  - no deadlocks, lock timeouts or connection errors;
+  - matches kick off, score, finish and are settled;
+  - every batch job and the regulatory report run, and every player's wallet agrees with the ledger.
+- **Running the playbook again** changes nothing on the MySQL server.
+
+Not tested yet:
+- **How long the data takes on a new lab:** the first deploy generated it in two parts, around a memory stall on a t3.small (since fixed: the t3.medium and the temporary table limit).
 - **sysbench over TLS** (on demand): its login with MySQL 8.4's default authentication.

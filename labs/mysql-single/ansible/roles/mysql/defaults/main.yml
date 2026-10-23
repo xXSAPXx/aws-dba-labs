@@ -22,6 +22,7 @@ mysql_error_log: /var/log/mysqld.log
 # Configuration sizing (/etc/my.cnf.d/lab.cnf), computed from this server's RAM:
 mysql_memory_mb: "{{ ansible_facts['memtotal_mb'] }}"
 mysql_buffer_pool_mb: "{{ ((mysql_memory_mb | int * 0.5 / 128) | int) * 128 }}" # about half the RAM, in 128 MB steps
+mysql_temptable_max_ram_mb: "{{ [128, ((mysql_memory_mb | int / 16 / 64) | int) * 64] | max }}" # about 1/16 of the RAM, at least 128 MB
 mysql_max_connections: 200
 mysql_redo_log_capacity: 1G
 mysql_io_capacity: 1500 # background flushing; the data volume is gp3 with 3000 IOPS

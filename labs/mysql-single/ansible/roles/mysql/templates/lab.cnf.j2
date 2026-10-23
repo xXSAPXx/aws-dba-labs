@@ -10,12 +10,20 @@ server_id = {{ mysql_server_id }}
 max_connections = {{ mysql_max_connections }}
 # Accounts are matched by IP, not by host name: no DNS lookup on every connection.
 skip_name_resolve = ON
+# Password policy (the validate_password component comes installed with the server). LOW checks only the length (8+).
+# The default, MEDIUM, also wants a digit, both cases and a special character; the lab's generated passwords
+# are 24 random letters and digits, so they may miss any of these.
+validate_password.policy = LOW
 
 #------------------------------------------------------------------------------
 # InnoDB
 #------------------------------------------------------------------------------
 # MySQL's own cache of data and indexes, about half the RAM.
 innodb_buffer_pool_size = {{ mysql_buffer_pool_mb }}M
+# RAM for internal temporary tables (GROUP BY, window functions, INSERT ... SELECT), shared by all sessions;
+# beyond it they go to disk. 8.4's default is 3% of the RAM but at least 1 GB: next to the buffer pool that
+# is more than a 2 GB server has, and the server stalls without swap.
+temptable_max_ram = {{ mysql_temptable_max_ram_mb }}M
 # Room for the redo log (8.0.30+, files in #innodb_redo): larger means fewer checkpoints under write load.
 innodb_redo_log_capacity = {{ mysql_redo_log_capacity }}
 # Durable: every commit is on disk before the client hears "OK" (together with sync_binlog = 1).
