@@ -35,6 +35,7 @@ ansible/roles/        Shared Ansible roles, used by every lab (how it works: ans
   percona_release/    Percona repository tool
   pmm_server/         PMM 3 in Docker, admin password
   prometheus_grafana/ Prometheus and Grafana in Docker next to PMM, EC2 service discovery
+  node_exporter/      node_exporter from EPEL, textfile collector for the backup scripts' metrics
   pmm_client/         PMM client, registration, monitored services, lock blocking metrics
   postgresql_client/  psql and pgbench on the load generator
   mysql_client/       The MySQL client on the load generator, the admin login in ~/.my.cnf

@@ -1,0 +1,45 @@
+---
+# node_exporter from EPEL, with its textfile collector reading node_exporter_textfile_dir.
+#   curl -s localhost:9100/metrics          what Prometheus scrapes
+#   systemctl status prometheus-node-exporter
+
+- name: Install node_exporter (EPEL)
+  ansible.builtin.dnf:
+    name: node-exporter
+    state: present
+
+# Written by root (the backup scripts), read by node_exporter's user (prometheus).
+- name: Create the textfile collector's directory
+  ansible.builtin.file:
+    path: "{{ node_exporter_textfile_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+# The package's service reads its options from this file (ARGS).
+- name: Write node_exporter's options
+  ansible.builtin.template:
+    src: prometheus-node-exporter.j2
+    dest: /etc/default/prometheus-node-exporter
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart node_exporter
+
+- name: Start node_exporter
+  ansible.builtin.systemd_service:
+    name: prometheus-node-exporter
+    state: started
+    enabled: true
+
+- name: Apply the option changes
+  ansible.builtin.meta: flush_handlers
+
+- name: Wait for node_exporter's metrics
+  ansible.builtin.uri:
+    url: http://127.0.0.1:{{ node_exporter_port }}/metrics
+  register: node_exporter_metrics
+  until: node_exporter_metrics.status == 200
+  retries: 15
+  delay: 2

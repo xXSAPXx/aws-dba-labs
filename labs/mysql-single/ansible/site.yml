@@ -45,6 +45,8 @@
       when: "'mysql' in group_names"
     - role: mysql_tools # Dolphie
       when: "'mysql' in group_names"
+    - role: node_exporter # for Prometheus; its textfile collector reads the backup scripts' metrics
+      when: "'mysql' in group_names"
 
 # From here on the steps need both servers: PMM must be running before a server registers with it,
 # and the sportsbook's data must be there before the application starts.

@@ -35,6 +35,9 @@ sportsbook_pmm_password: "{{ pmm_admin_password }}"
 # Prometheus and Grafana next to PMM: Prometheus finds this lab's servers by their Lab tag.
 prometheus_grafana_ec2_lab: mysql-single
 prometheus_grafana_admin_password: "{{ grafana_admin_password }}"
+# node_exporter runs on the MySQL servers (site.yml), not on this one.
+prometheus_grafana_node_exporter: true
+prometheus_grafana_node_exporter_skip: "{{ groups['pmm_server'] }}" # the inventory names are the EC2 Name tags
 
 # sysbench, on demand (sysbench.yml): rate, size and test are the sysbench role's defaults.
 sysbench_mysql_host: "{{ groups['mysql'][0] }}"
