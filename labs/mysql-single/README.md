@@ -11,7 +11,7 @@ A replica and ProxySQL come later; the binlogs and GTIDs are already on for them
   - **`/var/lib/mysql`** (20 GB): the data and the binlogs, as on the production servers.
   - **`/backup`** (20 GB): a local copy of the backups before they go to S3.
   
-  Also installed: Percona XtraBackup 8.4, MySQL Shell, Percona Toolkit, the AWS CLI, and Dolphie to watch MySQL live.
+  Also installed: Percona XtraBackup 8.4, MySQL Shell, Percona Toolkit, the AWS CLI, Dolphie to watch MySQL live, and node_exporter for Prometheus.
 - **mysql-pmm**: PMM 3 (Docker) in the public subnet, also the SSH jump host and the application side: the [sportsbook application](../../tools/sportsbook/README.md), Liquibase with the [sportsbook database's migrations](../../schema/sportsbook/README.md), and the MySQL client. Next to PMM, [Prometheus and Grafana](#prometheus-and-grafana) in Docker. SSH and the UIs accept connections only from your `admin_cidr`.
 - **Backup bucket** and an IAM role for `mysql-source`: it may read, write and delete in `s3://<bucket>/mysql/` and nowhere else, only from the VPC. The bucket is destroyed with the lab. The bucket's settings are the same as in [postgresql-single](../postgresql-single/README.md#backups-the-s3-bucket).
 
@@ -74,15 +74,16 @@ ssh mysql-source             # MySQL, through the jump host
 
 ### Prometheus and Grafana
 
-Next to PMM on `mysql-pmm`, in Docker (one Compose project in `/opt/prometheus-grafana`): the stack your own exporters and backup scripts will report to.
+Next to PMM on `mysql-pmm`, in Docker (one Compose project in `/opt/prometheus-grafana`): the stack your backup scripts report to, through node_exporter on `mysql-source`.
 
 | | URL (`terraform output`) | Login |
 |---|---|---|
 | Grafana 13.2 | `grafana_url`: `http://<pmm public IP>:3000` | `admin`, password in `ansible/credentials/grafana_admin_password` |
 | Prometheus 3.15 | `prometheus_url`: `http://<pmm public IP>:9090` | none; only your IP reaches it |
 
-- **Prometheus** scrapes every 15 s and keeps 1 day. It scrapes itself and Grafana; no alert rules yet.
-- **The lab's servers** are found through the EC2 API by their `Lab` tag (EC2 service discovery): no IP in the configuration, and a new server (a replica, ProxySQL) is found by itself. The PMM server's IAM role (`mysql-single-monitoring`) may only list the instances. Until the exporters are installed, the servers show under *Status → Service discovery* with their labels, and nothing is scraped from them.
+- **Prometheus** scrapes every 15 s and keeps 1 day: itself, Grafana, and node_exporter (job `node`). No alert rules yet.
+- **The lab's servers** are found through the EC2 API by their `Lab` tag (EC2 service discovery): no IP in the configuration, and a new server (a replica) is scraped by itself. The `node` job takes every server found except the PMM server, which runs no node_exporter, and labels each with its EC2 `Name` (`instance="mysql-source"`). *Status → Service discovery* shows every server found and which ones a job drops. The PMM server's IAM role (`mysql-single-monitoring`) may only list the instances.
+- **node_exporter** on `mysql-source` (EPEL package `node-exporter`, service `prometheus-node-exporter`, port 9100): the server's CPU, memory, disks and network, and through its textfile collector every `*.prom` file in **`/var/lib/node_exporter/textfile_collector`**, the directory your backup scripts write their metrics to. A metric line's own `instance` label shows up as `exported_instance`; the target's `instance` is the server's name. The mysqld exporter comes later; PMM has MySQL's metrics.
 - **Grafana** has Prometheus as its data source, and no dashboards yet.
 - On the server: `docker logs prometheus`, `docker logs grafana`. Changes to the configuration belong in the role (`ansible/roles/prometheus_grafana`): the playbook overwrites them, checks `prometheus.yml` with `promtool` and restarts what changed.
 

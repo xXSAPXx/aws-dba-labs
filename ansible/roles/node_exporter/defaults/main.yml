@@ -1,0 +1,12 @@
+---
+# Prometheus node_exporter: the server's metrics (CPU, memory, disks, network) and, through its textfile collector,
+# the metrics that scripts write into *.prom files, e.g. the backup scripts' status and duration.
+# From EPEL (package node-exporter, enabled by the common role): service prometheus-node-exporter, user prometheus.
+
+node_exporter_port: 9100
+
+# Where the backup scripts write their *.prom files (TEXTFILE_COLLECTOR_DIR in the scripts).
+node_exporter_textfile_dir: /var/lib/node_exporter/textfile_collector
+
+# More command-line options, e.g. ["--collector.systemd"]. The two above are always set.
+node_exporter_extra_args: []

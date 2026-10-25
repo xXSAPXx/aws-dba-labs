@@ -15,9 +15,31 @@ scrape_configs:
     static_configs:
       - targets: [grafana:3000]
 
-  # The lab's servers, found through the EC2 API by their Lab tag; the server's IAM role gives the access.
-  # Nothing to scrape yet: each exporter will get its own job (node_exporter 9100, mysqld_exporter 9104).
-  # Until then this job only lists the servers with their labels (Status > Service discovery) and drops them.
+  # The lab's servers are found through the EC2 API by their Lab tag; the server's IAM role gives the access.
+  # Status > Service discovery shows every server found, with its labels, and which ones a job drops.
+{% if prometheus_grafana_node_exporter %}
+  # node_exporter on every server found, except those without one. A new server in the lab is scraped by
+  # itself. instance = the server's Name tag (mysql-source) instead of its address (10.0.1.45:9100).
+  - job_name: node
+    ec2_sd_configs:
+      - region: {{ prometheus_grafana_ec2_region }}
+        port: {{ prometheus_grafana_node_exporter_port }}
+        refresh_interval: 60s
+        filters:
+          - name: tag:Lab
+            values: [{{ prometheus_grafana_ec2_lab }}]
+          - name: instance-state-name
+            values: [running]
+    relabel_configs:
+{% if prometheus_grafana_node_exporter_skip | length > 0 %}
+      - source_labels: [__meta_ec2_tag_Name]
+        regex: {{ prometheus_grafana_node_exporter_skip | map('regex_escape') | join('|') }}
+        action: drop
+{% endif %}
+      - source_labels: [__meta_ec2_tag_Name]
+        target_label: instance
+{% else %}
+  # No exporter job yet: this one only lists the servers and drops them.
   - job_name: ec2-discovery
     ec2_sd_configs:
       - region: {{ prometheus_grafana_ec2_region }}
@@ -31,3 +53,4 @@ scrape_configs:
       - source_labels: [__meta_ec2_instance_id]
         regex: .+
         action: drop
+{% endif %}

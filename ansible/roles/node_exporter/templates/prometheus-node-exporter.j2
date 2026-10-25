@@ -1,0 +1,3 @@
+# Managed by Ansible (role: node_exporter). Re-running the playbook overwrites manual changes.
+# The options of prometheus-node-exporter.service; `node_exporter --help` lists them all.
+ARGS='--web.listen-address=:{{ node_exporter_port }} --collector.textfile.directory={{ node_exporter_textfile_dir }}{% for arg in node_exporter_extra_args %} {{ arg }}{% endfor %}'

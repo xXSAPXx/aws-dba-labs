@@ -1,7 +1,7 @@
 ---
 # Prometheus and Grafana in Docker (one Compose project), next to PMM on the PMM server.
 # Prometheus scrapes itself and Grafana, and finds the lab's servers by their tags (EC2 service discovery,
-# with the server's IAM role). The exporters, their scrape jobs, the dashboards and the alert rules come later.
+# with the server's IAM role) to scrape their node_exporter. No dashboards or alert rules yet.
 
 prometheus_grafana_dir: /opt/prometheus-grafana # compose.yaml, prometheus.yml, Grafana's provisioning
 prometheus_grafana_prometheus_image: prom/prometheus:v3.15.1
@@ -17,6 +17,12 @@ prometheus_grafana_retention: 1d # how long Prometheus keeps the samples
 # EC2 service discovery: the region, and the value of the Lab tag that marks this lab's servers.
 prometheus_grafana_ec2_region: us-east-1
 prometheus_grafana_ec2_lab: "" # set by the lab, required
+
+# node_exporter on the lab's servers (role: node_exporter): scrape it on every server the discovery finds,
+# except those named here (EC2 Name tag), which run none. false: no node job.
+prometheus_grafana_node_exporter: false
+prometheus_grafana_node_exporter_port: 9100
+prometheus_grafana_node_exporter_skip: []
 
 # Grafana's admin password: set by the lab (group_vars), required.
 prometheus_grafana_admin_password: ""
