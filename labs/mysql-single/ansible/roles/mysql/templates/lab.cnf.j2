@@ -13,7 +13,9 @@ skip_name_resolve = ON
 # Password policy (the validate_password component comes installed with the server). LOW checks only the length (8+).
 # The default, MEDIUM, also wants a digit, both cases and a special character; the lab's generated passwords
 # are 24 random letters and digits, so they may miss any of these.
-validate_password.policy = LOW
+# loose_: the first start (mysqld --initialize) runs before the component is installed and would abort on an
+# unknown option, leaving an unusable data directory; with loose_ it warns and goes on.
+loose_validate_password.policy = LOW
 
 #------------------------------------------------------------------------------
 # InnoDB
