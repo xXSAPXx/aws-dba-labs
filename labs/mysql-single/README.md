@@ -147,10 +147,13 @@ Taking backups is yours to practise. The lab gives you:
 - **A backup user** with only the privileges XtraBackup needs: `backup`, over the socket. `sudo xtrabackup` without `--user` logs in as root from `/root/.my.cnf` instead.
 - **The local backup disk** at `/backup`, and the server's S3 folder. Both are in every login shell as `$BACKUP_DIR` and `$BACKUP_S3` (`s3://<bucket>/mysql`), also after `sudo -i`.
 - **S3 access through the server's IAM role:** no keys on the server. `aws s3 ls "$BACKUP_S3/"` works from the start.
+- **A backup encryption key** in Secrets Manager, `mysql-single/backup-encryption-key`: 32 letters and digits, for `xtrabackup --encrypt=AES256` and `xbcrypt`. The server reads it through its IAM role: `aws secretsmanager get-secret-value --secret-id mysql-single/backup-encryption-key --query SecretString --output text`. AWS generated the value; it is not in Terraform's state.
 
 The bucket keeps whatever you put there until the lab is destroyed: delete old backups yourself. Overwritten and deleted files stay recoverable as older versions for 7 days.
 
-**The binlogs** are where the binlog backup script in `dba-ops-scripts` expects them: in `/var/lib/mysql`, named `mysql-bin.NNNNNN`. That script uploads to Google Cloud Storage; porting it and the full backup script to S3 is the next step for this lab.
+**The binlogs** are where the binlog backup script in `dba-ops-scripts` expects them: in `/var/lib/mysql`, named `mysql-bin.NNNNNN`.
+
+**The backup scripts for this lab** are the AWS versions in `dba-ops-scripts` (`mysql_prod_backup_script/`): `mysql_backup_v3_aws.sh` (full backups) and `mysql_binlog_backup_v2_aws.sh` (binlogs). They are the production scripts with the upload to S3 instead of Google Cloud Storage. Before the first run, set `S3_BUCKET` at the top of each: `$BACKUP_S3` for the full backups, `$BACKUP_S3/binlog_backups` for the binlogs. They log in to MySQL with `--login-path=local`, which falls back to root's `/root/.my.cnf` here.
 
 ## Destroy
 
@@ -159,7 +162,7 @@ cd labs/mysql-single/terraform
 terraform destroy
 ```
 
-It also deletes the backup bucket with everything in it, and removes the SSH config and the inventory.
+It also deletes the backup bucket with everything in it, and removes the SSH config and the inventory. The lab's secrets are deleted at once, without Secrets Manager's recovery window, so the next deploy can create them again; the backups they encrypted are gone with the bucket.
 
 ## Tested
 
@@ -173,9 +176,16 @@ The first deploy (23 October 2026, Percona Server 8.4.11-11 on a t3.medium) chec
   - every batch job and the regulatory report run, and every player's wallet agrees with the ledger.
 - **Running the playbook again** changes nothing on the MySQL server.
 
-A new lab from scratch (29 October 2026) checked:
+The deploy of 29 October 2026, from scratch, checked:
 - **MySQL's first start** creates the data directory with the password policy already in `lab.cnf`.
 - **The sportsbook's data** in about 5 minutes, all 47 changesets.
+- **The AWS backup scripts**, run as root from `/opt/scripts`:
+  - an XtraBackup full backup to S3 in 20 seconds, the same size in S3 as on `/backup`;
+  - a refused upload (a folder the IAM role may not write to) reported as a failed transfer;
+  - a binlog chain from `mysql-bin.000001`: 19 binlogs in 27 seconds, each the same size in S3 as on the server;
+  - an upload over an existing binlog refused (`PreconditionFailed`) and the object left unchanged;
+  - the metrics of both scripts in Prometheus (`node_mysql_*`, `instance="mysql-source"`).
+- **The backup encryption key** in Secrets Manager: readable by the server's IAM role, not in Terraform's state.
 
 Not tested yet:
 - **sysbench over TLS** (on demand): its login with MySQL 8.4's default authentication.

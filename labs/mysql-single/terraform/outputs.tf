@@ -46,3 +46,8 @@ output "backup_s3_prefix" {
 output "mysql_iam_role" {
   value = module.mysql_role.role_name
 }
+
+# Secrets Manager: the lab's secrets, readable by the database server (the values are not in the state)
+output "secrets" {
+  value = module.lab_secrets.names
+}
