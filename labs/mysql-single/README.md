@@ -173,6 +173,9 @@ The first deploy (23 October 2026, Percona Server 8.4.11-11 on a t3.medium) chec
   - every batch job and the regulatory report run, and every player's wallet agrees with the ledger.
 - **Running the playbook again** changes nothing on the MySQL server.
 
+A new lab from scratch (29 October 2026) checked:
+- **MySQL's first start** creates the data directory with the password policy already in `lab.cnf`.
+- **The sportsbook's data** in about 5 minutes, all 47 changesets.
+
 Not tested yet:
-- **How long the data takes on a new lab:** the first deploy generated it in two parts, around a memory stall on a t3.small (since fixed: the t3.medium and the temporary table limit).
 - **sysbench over TLS** (on demand): its login with MySQL 8.4's default authentication.
