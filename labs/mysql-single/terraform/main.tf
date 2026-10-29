@@ -78,6 +78,24 @@ module "mysql_role" {
 }
 
 
+# Secrets: this lab's Secrets Manager secrets, readable by the database server (its IAM role).
+# Random values made by AWS, never in Terraform's state; deleted with the lab (and so are the backups they encrypt).
+######################################################################################
+module "lab_secrets" {
+  source = "../../../modules/lab_secrets"
+
+  name_prefix       = "mysql-single"
+  reader_role_names = [module.mysql_role.role_name]
+
+  secrets = {
+    backup-encryption-key = {
+      description = "AES256 key of the XtraBackup and binlog backups (xtrabackup --encrypt, xbcrypt): 32 characters"
+      length      = 32
+    }
+  }
+}
+
+
 # Create the EC2: (MySQL Database)
 ######################################################################################
 module "mysql_ec2_instance" {

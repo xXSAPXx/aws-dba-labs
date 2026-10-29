@@ -29,6 +29,7 @@ modules/              Shared Terraform modules, used by every lab
   iam_roles/          A database server's IAM role (instance profile): its folder of the backup bucket
   ec2_discovery_role/ A monitoring server's IAM role (instance profile): list the EC2 instances, for Prometheus
   s3_for_backups/     S3 bucket for backups: versioned, encrypted, private, TLS only
+  lab_secrets/        Secrets Manager secrets of a lab (e.g. the backup key): random, not in the state, deleted with the lab
 ansible/roles/        Shared Ansible roles, used by every lab (how it works: ansible/README.md)
   common/             Hostname, /etc/hosts, EPEL, admin tools, Cockpit off
   data_volume/        Formats and mounts a database server's EBS volumes (data, backup)
