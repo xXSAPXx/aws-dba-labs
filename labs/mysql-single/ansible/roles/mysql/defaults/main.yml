@@ -31,6 +31,11 @@ mysql_io_capacity: 1500 # background flushing; the data volume is gp3 with 3000 
 mysql_server_id: 1
 mysql_binlog_expire_seconds: 259200 # 3 days
 
+# Audit log (Percona's audit_log_filter component): who ran which DDL / DCL, when and from where. No DML.
+# The filter is files/audit_log_filter_<name>.json, assigned to every account ('%').
+mysql_audit_log_dir: /var/log/mysql
+mysql_audit_log_filter: ddl_dcl_only
+
 # Extra settings written at the end of lab.cnf (they win over everything above). Example:
 #   mysql_settings_extra: { long_query_time: 0.1, innodb_print_all_deadlocks: "ON" }
 mysql_settings_extra: {}

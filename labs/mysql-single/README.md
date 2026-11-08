@@ -111,6 +111,7 @@ The settings are in `/etc/my.cnf.d/lab.cnf`, sized from the server's RAM and com
 | GTIDs | on (`gtid_mode`, `enforce_gtid_consistency`), ready for a replica |
 | Error log | `/var/log/mysqld.log` |
 | Slow log | `/var/lib/mysql/mysql-source-slow.log`, statements over 0.5 s |
+| Audit log | `/var/log/mysql/audit.log` (JSON), Percona's `audit_log_filter` component with the filter `ddl_dcl_only` for every account: DDL, DCL and admin commands (`GRANT`, `ALTER USER`, `FLUSH`, `KILL`...), with who, when and from where. No DML, no SELECTs, no logins. A new file every 100 MB, 1 GB kept |
 | Buffer pool | about half the RAM (1.6 GB on the t3.medium: the 1 GB of sportsbook data fits) |
 | Temporary tables | `temptable_max_ram` about 1/16 of the RAM (192 MB), instead of 8.4's default of at least 1 GB, which stalled a 2 GB server |
 | Durability | `innodb_flush_log_at_trx_commit = 1` and `sync_binlog = 1` |
@@ -186,6 +187,12 @@ The deploy of 29 October 2026, from scratch, checked:
   - an upload over an existing binlog refused (`PreconditionFailed`) and the object left unchanged;
   - the metrics of both scripts in Prometheus (`node_mysql_*`, `instance="mysql-source"`).
 - **The backup encryption key** in Secrets Manager: readable by the server's IAM role, not in Terraform's state.
+
+The deploy of 8 November 2026, from scratch, checked the audit log (Percona Server 8.4.11-11):
+- **The component and its settings:** installed by Percona's script (`/usr/share/percona-server/audit_log_filter_linux_install.sql`); after the restart every setting from `lab.cnf` is in effect, with no warnings. SELinux is enforcing, with no denials.
+- **The filter `ddl_dcl_only`, assigned to every account:** in a test session, all 11 DDL and DCL statements were logged with the account and its host. INSERT, UPDATE, DELETE and SELECT were not. Passwords in `CREATE USER` and `ALTER USER` show as `<secret>`, never as plain text.
+- **The lab's own setup is in the log:** the playbook's users, roles and grants, and the migrations' tables and grants (`sb_migrator` from the PMM server).
+- **Running the playbook again** changes nothing, and the filter keeps its first revision.
 
 Not tested yet:
 - **sysbench over TLS** (on demand): its login with MySQL 8.4's default authentication.
