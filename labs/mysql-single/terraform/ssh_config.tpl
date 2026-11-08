@@ -25,3 +25,17 @@ Host mysql-source
     ServerAliveInterval 15
     ServerAliveCountMax 4
     ProxyJump mysql-pmm
+%{ if mysql_replica_ip != null ~}
+
+Host mysql-replica
+    HostName ${mysql_replica_ip}
+    User ${ssh_user}
+%{ if ssh_private_key_path != null ~}
+    IdentityFile "${ssh_private_key_path}"
+%{ endif ~}
+    UserKnownHostsFile ~/.ssh/aws-mysql-single_known_hosts
+    StrictHostKeyChecking accept-new
+    ServerAliveInterval 15
+    ServerAliveCountMax 4
+    ProxyJump mysql-pmm
+%{ endif ~}

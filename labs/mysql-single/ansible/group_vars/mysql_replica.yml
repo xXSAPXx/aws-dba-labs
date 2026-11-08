@@ -1,0 +1,23 @@
+---
+# mysql-replica: only while it exists (terraform apply -var mysql_replica=true). Set up like mysql-source, but its
+# users, databases and data come from the source's backup (replica.yml), so none are created here.
+
+# The same disks as the source: data and binlogs, and the backups.
+data_volume_mount_point: /var/lib/mysql
+data_volume_extra_volumes:
+  - id: "{{ backup_volume_id }}"
+    mount_point: /backup
+
+mysql_server_id: 2
+
+# Its own backups go to a folder of their own, inside the source's (the IAM role allows everything under mysql/).
+mysql_backup_s3: "s3://{{ backup_bucket }}/mysql/{{ inventory_hostname }}"
+mysql_backup_s3_region: "{{ backup_bucket_region }}"
+
+# PMM, as on the source: the pmm user comes with the source's data.
+pmm_client_services:
+  - type: mysql
+    name: "{{ inventory_hostname }}"
+    username: pmm
+    password: "{{ mysql_pmm_password }}"
+    extra_args: --query-source=perfschema

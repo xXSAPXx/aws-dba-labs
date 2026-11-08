@@ -2,7 +2,7 @@
 
 A single Percona Server for MySQL 8.4 server in a private subnet, monitored by PMM 3, under the production traffic of a simulated sportsbook: players betting on live matches, an odds feed, and the back office's batch jobs. It is built for practising backups: XtraBackup full and incremental backups, MySQL Shell dumps and binlog backups, with a local backup disk and an S3 bucket. The tools are installed; taking the backups is yours to do.
 
-A replica and ProxySQL come later; the binlogs and GTIDs are already on for them.
+A replica is there on demand, only for the tests that need one: see [A replica, on demand](#a-replica-on-demand). ProxySQL comes later.
 
 ## What it deploys
 
@@ -156,6 +156,33 @@ The bucket keeps whatever you put there until the lab is destroyed: delete old b
 
 **The backup scripts for this lab** are the AWS versions in `dba-ops-scripts` (`mysql_prod_backup_scripts/`): `mysql_backup_v3_aws.sh` (full backups) and `mysql_binlog_backup_v2_aws.sh` (binlogs). They are the production scripts with the upload to S3 instead of Google Cloud Storage. Before the first run, set `S3_BUCKET` at the top of each: `$BACKUP_S3` for the full backups, `$BACKUP_S3/binlog_backups` for the binlogs. They log in to MySQL with `--login-path=local`, which falls back to root's `/root/.my.cnf` here.
 
+## A replica, on demand
+
+For the tests that need one: `mysql-replica`, the same server as `mysql-source` (type, disks, IAM role), replicating from it. It is off by default, so a normal deploy takes no longer and costs no more.
+
+```bash
+cd labs/mysql-single/terraform
+terraform apply -var mysql_replica=true    # adds only mysql-replica: mysql-source is not touched
+cd ../ansible
+ansible-playbook site.yml                  # sets it up, then builds the replication (replica.yml, at the end)
+ssh mysql-replica
+```
+
+A plain `terraform apply` removes it again, and only it. PMM then keeps `mysql-replica` as a node that is down: remove it in PMM (*Inventory*), or the next replica's registration replaces it. **Cost:** about $0.05 per hour more while it runs (a t3.medium and 50 GB of gp3).
+
+`replica.yml` builds it from a backup, with the production scripts: the AWS ones from `dba-ops-scripts`, which must be next to this repository on your machine (`dba_ops_scripts_dir` in `group_vars/all.yml`). A copy already in `/opt/scripts` is kept; only its bucket is set.
+1. **On the source:** the replication user `repl`, TLS only (`REQUIRE SSL`), from the replica's IP only. Then the backups to build from: the latest full backup in `$BACKUP_S3` and the incremental backups after it. Only if there is no full backup yet, `mysql_backup_v3_aws.sh --xtrabackup` takes one (about 20 seconds).
+2. **On the replica:**
+   - `mysql_restore_v2_aws.sh` restores them, and MySQL comes up closed.
+   - It is made read-only (`super_read_only`, persisted) before it opens.
+   - Its GTIDs must match the backup's.
+   - Replication starts with GTIDs (`SOURCE_AUTO_POSITION = 1`) over TLS (`SOURCE_SSL = 1`), and the source's binlogs since the backup catch it up.
+3. **PMM and Prometheus:** the replica in PMM; Prometheus finds it by itself.
+
+TLS: the connection is encrypted, and the source refuses `repl` without TLS. The replica does not check the source's certificate, so a rebuilt source needs nothing copied to its replicas.
+
+A replica that is replicating already is left alone. To build it again from a newer backup, remove it and add it again. Its own backups, if you run the scripts there, go to `s3://<bucket>/mysql/mysql-replica` (`$BACKUP_S3` on the replica).
+
 ## Destroy
 
 ```bash
@@ -193,6 +220,20 @@ The deploy of 8 November 2026, from scratch, checked the audit log (Percona Serv
 - **The filter `ddl_dcl_only`, assigned to every account:** in a test session, all 11 DDL and DCL statements were logged with the account and its host. INSERT, UPDATE, DELETE and SELECT were not. Passwords in `CREATE USER` and `ALTER USER` show as `<secret>`, never as plain text.
 - **The lab's own setup is in the log:** the playbook's users, roles and grants, and the migrations' tables and grants (`sb_migrator` from the PMM server).
 - **Running the playbook again** changes nothing, and the filter keeps its first revision.
+
+A second deploy on 8 November 2026 checked the replica:
+- **Without a replica,** a deploy is unchanged: the playbook took 766 s (763 s before), and the replica's plays ended at once.
+- **Adding it:**
+  - `terraform apply -var mysql_replica=true` took 51 s and added only the replica's server and disks.
+  - `site.yml` took 366 s, setting up the replica included.
+  - The bucket was empty, so the backup script took a full backup (23 s, 303 MB). The restore took 26 s and the catch-up 12 s.
+- **The replica:**
+  - `server_id = 2`, read-only (a write as root was refused), and a new `server_uuid`.
+  - It replicates with GTIDs, 0 s behind, with no transactions of its own.
+  - It is in PMM, and Prometheus found it by itself.
+- **TLS:** the replication connection uses TLS 1.3. Without TLS (`SOURCE_SSL = 0`), the source refused `repl` (`Access denied`, error 1045).
+- **Running the playbook again** changed nothing on the three servers.
+- **Removing it** (a plain `terraform apply`) destroyed only the replica's 6 resources. `mysql-source` kept running, with no restart, and kept serving the sportsbook.
 
 Not tested yet:
 - **sysbench over TLS** (on demand): its login with MySQL 8.4's default authentication.

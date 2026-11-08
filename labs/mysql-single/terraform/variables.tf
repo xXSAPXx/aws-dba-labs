@@ -75,6 +75,15 @@ variable "mysql_backup_volume_size" {
   description = "Size in GB of the backup volume (gp3, mounted at /backup): XtraBackup and MySQL Shell backups before they go to S3."
 }
 
+# A replica of mysql-source, only for the tests that need one. terraform apply -var mysql_replica=true adds it,
+# a plain terraform apply removes it again; mysql-source is not touched either way. The playbook builds it from
+# the latest backup in S3 (replica.yml).
+variable "mysql_replica" {
+  type        = bool
+  default     = false
+  description = "Add mysql-replica: the same server type and disks as mysql-source, replicating from it."
+}
+
 variable "ssh_private_key_path" {
   type        = string
   default     = null

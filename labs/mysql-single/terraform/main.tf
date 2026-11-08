@@ -127,6 +127,34 @@ module "mysql_ec2_instance" {
 }
 
 
+# The replica: only while var.mysql_replica is true (terraform apply -var mysql_replica=true).
+# The same server as mysql-source, with the same IAM role: it restores from the source's backups in S3.
+######################################################################################
+module "mysql_replica" {
+  source = "../../../modules/db_server"
+  count  = var.mysql_replica ? 1 : 0
+
+  vpc_id                = module.vpc.vpc_id
+  vpc_cidr_block        = module.vpc.vpc_cidr_block
+  db_ports              = [3306, 9100, 9104] # MySQL, node_exporter, mysqld_exporter (for Prometheus on the PMM server)
+  sec_group_name        = "MySQL_Replica_SG"
+  sec_group_description = "Allow SSH / PMM and MySQL Ports"
+
+  name                 = "mysql-replica"
+  ami_id               = data.aws_ami.rocky_10.id
+  instance_type        = var.mysql_instance_type
+  cpu_credits          = var.cpu_credits
+  key_name             = var.aws_key_pair
+  subnet_id            = module.vpc.private_subnet_1_id
+  iam_instance_profile = module.mysql_role.instance_profile_name
+
+  volume_size        = 10
+  volume_type        = "gp3"
+  data_volume_size   = var.mysql_data_volume_size
+  backup_volume_size = var.mysql_backup_volume_size
+}
+
+
 # Monitoring: the PMM server's IAM role, so Prometheus (next to PMM) finds the lab's servers by their tags
 ######################################################################################
 module "monitoring_role" {

@@ -4,6 +4,7 @@
 #   ~/.ssh/aws-mysql-single.conf     SSH config: ssh mysql-pmm / ssh mysql-source (via the PMM server)
 #   ../ansible/inventory.ini         Ansible inventory: the same host names + private IPs + VPC CIDR
 # The host names differ from postgresql-single's, so both labs can run at the same time.
+# mysql-replica is in both only while it exists (var.mysql_replica): its values are null without it.
 ####################################################################################################
 
 resource "local_file" "ssh_config" {
@@ -13,6 +14,7 @@ resource "local_file" "ssh_config" {
   content = templatefile("${path.module}/ssh_config.tpl", {
     pmm_server_public_ip = module.pmm_server.pmm_server_public_ip
     mysql_internal_ip    = module.mysql_ec2_instance.private_ip
+    mysql_replica_ip     = one(module.mysql_replica[*].private_ip)
     ssh_user             = local.ssh_user
     ssh_private_key_path = var.ssh_private_key_path
   })
@@ -27,10 +29,14 @@ resource "local_file" "ansible_inventory" {
     mysql_internal_ip      = module.mysql_ec2_instance.private_ip
     mysql_data_volume_id   = module.mysql_ec2_instance.data_volume_id
     mysql_backup_volume_id = module.mysql_ec2_instance.backup_volume_id
-    vpc_cidr_block         = module.vpc.vpc_cidr_block
-    backup_bucket          = module.backup_bucket.bucket_name
-    backup_bucket_region   = module.backup_bucket.bucket_region
-    ssh_user               = local.ssh_user
+    # The replica (null without one):
+    mysql_replica_ip               = one(module.mysql_replica[*].private_ip)
+    mysql_replica_data_volume_id   = one(module.mysql_replica[*].data_volume_id)
+    mysql_replica_backup_volume_id = one(module.mysql_replica[*].backup_volume_id)
+    vpc_cidr_block                 = module.vpc.vpc_cidr_block
+    backup_bucket                  = module.backup_bucket.bucket_name
+    backup_bucket_region           = module.backup_bucket.bucket_region
+    ssh_user                       = local.ssh_user
   })
 }
 
@@ -39,6 +45,7 @@ resource "terraform_data" "reset_known_hosts" {
   triggers_replace = [
     module.pmm_server.pmm_server_public_ip,
     module.mysql_ec2_instance.private_ip,
+    one(module.mysql_replica[*].private_ip), # a rebuilt replica can come back on the same IP with a new key
   ]
 
   provisioner "local-exec" {
