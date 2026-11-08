@@ -1,0 +1,217 @@
+---
+# The replica: mysql-replica, built from the latest backup of mysql-source in S3, replicating from it over TLS.
+# Only while the replica exists (terraform apply -var mysql_replica=true): site.yml runs this at the end, and it
+# also runs on its own:
+#   ansible-playbook replica.yml
+# A replica that already replicates is left alone. To build it again from a newer backup, remove it and add it again
+# (terraform apply, then terraform apply -var mysql_replica=true), and run site.yml.
+#
+# 1. The replica: is it replicating already? Then there is nothing to build.
+# 2. The source: the replication user (TLS only, from the replica's IP), and the backups to build from: the latest
+#    full backup in S3 and the incremental backups after it. Only if there is no full backup, the backup script takes one.
+# 3. The replica: the restore script restores them and starts MySQL closed. The replica is made read-only before it
+#    opens, then replicates with GTIDs: the source's binlogs since the backup catch it up.
+# 4. The replica in PMM.
+# The backup and restore scripts are the AWS ones from dba-ops-scripts (dba_ops_scripts_dir in group_vars/all.yml).
+# The mysql modules log in as root from /root/.my.cnf.
+
+- name: Check whether the replica is replicating already
+  hosts: mysql_replica
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Read the replica's status
+      ansible.mysql.mysql_replication:
+        mode: getreplica
+      register: replica_status
+
+    - name: Note whether it needs building
+      ansible.builtin.set_fact:
+        replica_build: "{{ not replica_status.Is_Replica }}"
+
+
+- name: Source - the replication user, and the backups to build the replica from
+  hosts: mysql
+  become: true
+  gather_facts: false
+  vars:
+    replica_needed: >-
+      {{ groups['mysql_replica'] | default([]) | map('extract', hostvars, 'replica_build')
+         | map('default', false) | select | list | length > 0 }}
+  environment:
+    AWS_DEFAULT_REGION: "{{ mysql_backup_s3_region }}"
+  tasks:
+    # TLS only (REQUIRE SSL), and only from the replica's IP. The replica asks for TLS (SOURCE_SSL = 1); this makes
+    # sure that a login without it is refused.
+    - name: Create the replication user
+      ansible.mysql.mysql_user:
+        name: repl
+        host: "{{ hostvars[item]['private_ip'] }}"
+        plugin: caching_sha2_password
+        plugin_auth_string: "{{ mysql_repl_password }}"
+        salt: "{{ (('repl@' ~ hostvars[item]['private_ip']) | hash('sha1'))[:20] }}"
+        priv: "*.*:REPLICATION SLAVE"
+        tls_requires:
+          SSL:
+        state: present
+      loop: "{{ groups['mysql_replica'] | default([]) }}"
+      no_log: true
+
+    - name: Take the backups from here, only to build a replica
+      when: replica_needed
+      block:
+        - name: Create the scripts folder
+          ansible.builtin.file:
+            path: /opt/scripts
+            state: directory
+            owner: root
+            group: root
+            mode: "0700"
+
+        # An existing copy is kept (force: false): only its bucket is set.
+        - name: Install the backup script
+          ansible.builtin.copy:
+            src: "{{ dba_ops_scripts_dir }}/mysql_prod_backup_scripts/mysql_backup_v3_aws.sh"
+            dest: /opt/scripts/mysql_backup_v3_aws.sh
+            owner: root
+            group: root
+            mode: "0700"
+            force: false
+
+        - name: Point the backup script at this server's folder in S3
+          ansible.builtin.lineinfile:
+            path: /opt/scripts/mysql_backup_v3_aws.sh
+            regexp: "^S3_BUCKET="
+            line: 'S3_BUCKET="{{ mysql_backup_s3 }}"'
+
+        # aws s3 ls exits 1 for an empty folder. The backup script runs only without a full backup: it writes its own log
+        # (/var/log/mysql_backup.log) and metrics, as from cron.
+        - name: List the backups in S3, after a full backup if there is none
+          ansible.builtin.shell: |
+            set -eo pipefail
+            list(){
+                objects=$(aws s3 ls "{{ mysql_backup_s3 }}/") || [ $? -eq 1 ]
+                echo "$objects" | awk '$4 ~ /^[0-9-]+-db(full|incr)\.xbstream$/ {print $4}' | sort
+            }
+            if ! list | grep -q -- '-dbfull\.xbstream$'; then
+                /opt/scripts/mysql_backup_v3_aws.sh --xtrabackup >&2
+                echo "new full backup taken" >&2
+            fi
+            list
+          args:
+            executable: /bin/bash
+          register: replica_backup_list
+          changed_when: "'new full backup taken' in replica_backup_list.stderr"
+
+        # The names start with the backup's time: the incremental backups after the latest full one are its chain.
+        - name: Choose the latest full backup and the incremental backups after it
+          ansible.builtin.set_fact:
+            replica_backups: "{{ [full] + (replica_backup_list.stdout_lines | select('search', '-dbincr\\.xbstream$') | select('gt', full) | list) }}"
+          vars:
+            full: "{{ replica_backup_list.stdout_lines | select('search', '-dbfull\\.xbstream$') | last }}"
+
+
+- name: Replica - restore the source's backups, then replicate from the source
+  hosts: mysql_replica
+  become: true
+  gather_facts: false
+  vars:
+    replica_source: "{{ groups['mysql'][0] }}"
+  environment:
+    AWS_DEFAULT_REGION: "{{ mysql_backup_s3_region }}"
+  tasks:
+    - name: Leave a replica that is replicating already
+      ansible.builtin.meta: end_host
+      when: not replica_build
+
+    - name: Create the scripts folder
+      ansible.builtin.file:
+        path: /opt/scripts
+        state: directory
+        owner: root
+        group: root
+        mode: "0700"
+
+    # An existing copy is kept (force: false): only its bucket is set.
+    - name: Install the restore script
+      ansible.builtin.copy:
+        src: "{{ dba_ops_scripts_dir }}/mysql_restore_script/mysql_restore_v2_aws.sh"
+        dest: /opt/scripts/mysql_restore_v2_aws.sh
+        owner: root
+        group: root
+        mode: "0700"
+        force: false
+
+    - name: Point the restore script at the source's backups
+      ansible.builtin.lineinfile:
+        path: /opt/scripts/mysql_restore_v2_aws.sh
+        regexp: "^S3_BUCKET="
+        line: 'S3_BUCKET="{{ hostvars[replica_source]["mysql_backup_s3"] }}"'
+
+    # It stops MySQL, empties the datadir, restores and prepares the backups, and starts MySQL closed to clients
+    # (only the local socket, no replication, no events). Its log: /opt/restore_script.log.
+    - name: Restore the source's backups
+      ansible.builtin.command:
+        argv: "{{ ['/opt/scripts/mysql_restore_v2_aws.sh'] + hostvars[replica_source]['replica_backups'] }}"
+      changed_when: true
+
+    # While it is still closed, so nothing can write before it is a replica: read-only for everyone but replication,
+    # also after a restart (SET PERSIST).
+    - name: Make the replica read-only
+      ansible.mysql.mysql_query:
+        query:
+          - SET PERSIST read_only = ON
+          - SET PERSIST super_read_only = ON
+
+    - name: Open MySQL
+      ansible.builtin.systemd_service:
+        name: mysqld
+        state: restarted
+
+    # GTIDs: the replica asks the source for every transaction it lacks, so it must hold exactly those of the backup.
+    - name: Check that the replica has the backup's transactions (GTIDs)
+      ansible.builtin.shell: |
+        set -eo pipefail
+        backup=$(cut -f3- /var/lib/mysql/xtrabackup_binlog_info | tr -d '\n ')
+        server=$(mysql -N -B -r -e 'SELECT @@GLOBAL.gtid_executed' | tr -d '\n ')
+        [ "$backup" = "$server" ] || { echo "The backup has $backup, the server $server"; exit 1; }
+      args:
+        executable: /bin/bash
+      changed_when: false
+
+    # SOURCE_SSL = 1: encrypted. The source refuses the user without TLS (REQUIRE SSL). No certificate check, so a
+    # rebuilt source needs nothing copied to its replicas.
+    - name: Point replication at the source
+      ansible.mysql.mysql_replication:
+        mode: changereplication
+        primary_host: "{{ hostvars[replica_source]['private_ip'] }}"
+        primary_user: repl
+        primary_password: "{{ mysql_repl_password }}"
+        primary_auto_position: true
+        primary_ssl: true
+
+    - name: Start replication
+      ansible.mysql.mysql_replication:
+        mode: startreplica
+
+    - name: Wait until the replica has caught up
+      ansible.mysql.mysql_replication:
+        mode: getreplica
+      register: replica_status
+      until: >-
+        replica_status.Replica_IO_Running == 'Yes' and replica_status.Replica_SQL_Running == 'Yes'
+        and replica_status.Seconds_Behind_Source | int <= 5
+      retries: 30
+      delay: 10
+
+    - name: Check that replication uses TLS
+      ansible.builtin.assert:
+        that: replica_status.Source_SSL_Allowed == 'Yes'
+        quiet: true
+
+
+- name: Register the replica with PMM
+  hosts: mysql_replica
+  become: true
+  roles:
+    - pmm_client

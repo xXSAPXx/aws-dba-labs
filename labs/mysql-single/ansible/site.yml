@@ -39,14 +39,15 @@
       when: "'pmm_server' in group_names"
     - role: mysql_client # the mysql client on the PMM server, the application side
       when: "'pmm_server' in group_names"
+    # The MySQL servers: mysql-source, and mysql-replica while it exists (its replication is built at the end, replica.yml).
     - role: data_volume # before MySQL is installed: its files go to the data disk; also mounts /backup
-      when: "'mysql' in group_names"
+      when: "'mysql' in group_names or 'mysql_replica' in group_names"
     - role: mysql
-      when: "'mysql' in group_names"
+      when: "'mysql' in group_names or 'mysql_replica' in group_names"
     - role: mysql_tools # Dolphie
-      when: "'mysql' in group_names"
+      when: "'mysql' in group_names or 'mysql_replica' in group_names"
     - role: node_exporter # for Prometheus; its textfile collector reads the backup scripts' metrics
-      when: "'mysql' in group_names"
+      when: "'mysql' in group_names or 'mysql_replica' in group_names"
 
 # From here on the steps need both servers: PMM must be running before a server registers with it,
 # and the sportsbook's data must be there before the application starts.
@@ -83,3 +84,8 @@
     - name: Start the sportsbook application
       ansible.builtin.import_role:
         name: sportsbook
+
+# Last, once the source has its data: the replica, only while it exists (terraform apply -var mysql_replica=true).
+# Without one, its plays find no hosts and end at once.
+- name: Build the replica
+  ansible.builtin.import_playbook: replica.yml

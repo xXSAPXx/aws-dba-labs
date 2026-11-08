@@ -6,6 +6,11 @@ output "mysql_ec2_instance_internal_ip" {
   value = module.mysql_ec2_instance.private_ip
 }
 
+output "mysql_replica_internal_ip" {
+  value       = one(module.mysql_replica[*].private_ip)
+  description = "mysql-replica's private IP; null without a replica (var.mysql_replica)"
+}
+
 output "pmm_server_public_ip" {
   value = module.pmm_server.pmm_server_public_ip
 }
