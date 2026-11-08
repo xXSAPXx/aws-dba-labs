@@ -1,0 +1,77 @@
+{
+  "filter": {
+    "class": [
+      {
+        "name": "general",
+        "event": {
+          "name": "status",
+          "log": {
+            "and": [
+              {"field": {"name": "general_command.str", "value": "Query"}},
+              {
+                "or": [
+                  {"field": {"name": "general_sql_command.str", "value": "create_db"}},
+                  {"field": {"name": "general_sql_command.str", "value": "drop_db"}},
+                  {"field": {"name": "general_sql_command.str", "value": "alter_db"}},
+                  {"field": {"name": "general_sql_command.str", "value": "create_table"}},
+                  {"field": {"name": "general_sql_command.str", "value": "alter_table"}},
+                  {"field": {"name": "general_sql_command.str", "value": "drop_table"}},
+                  {"field": {"name": "general_sql_command.str", "value": "truncate"}},
+                  {"field": {"name": "general_sql_command.str", "value": "rename_table"}},
+                  {"field": {"name": "general_sql_command.str", "value": "create_index"}},
+                  {"field": {"name": "general_sql_command.str", "value": "drop_index"}},
+                  {"field": {"name": "general_sql_command.str", "value": "create_view"}},
+                  {"field": {"name": "general_sql_command.str", "value": "drop_view"}},
+                  {"field": {"name": "general_sql_command.str", "value": "create_procedure"}},
+                  {"field": {"name": "general_sql_command.str", "value": "drop_procedure"}},
+                  {"field": {"name": "general_sql_command.str", "value": "create_function"}},
+                  {"field": {"name": "general_sql_command.str", "value": "drop_function"}},
+                  {"field": {"name": "general_sql_command.str", "value": "create_trigger"}},
+                  {"field": {"name": "general_sql_command.str", "value": "drop_trigger"}},
+                  {"field": {"name": "general_sql_command.str", "value": "create_event"}},
+                  {"field": {"name": "general_sql_command.str", "value": "drop_event"}},
+                  {"field": {"name": "general_sql_command.str", "value": "grant"}},
+                  {"field": {"name": "general_sql_command.str", "value": "revoke"}},
+                  {"field": {"name": "general_sql_command.str", "value": "grant_roles"}},
+                  {"field": {"name": "general_sql_command.str", "value": "revoke_roles"}},
+                  {"field": {"name": "general_sql_command.str", "value": "create_user"}},
+                  {"field": {"name": "general_sql_command.str", "value": "drop_user"}},
+                  {"field": {"name": "general_sql_command.str", "value": "alter_user"}},
+                  {"field": {"name": "general_sql_command.str", "value": "rename_user"}},
+                  {"field": {"name": "general_sql_command.str", "value": "set_password"}},
+                  {"field": {"name": "general_sql_command.str", "value": "create_role"}},
+                  {"field": {"name": "general_sql_command.str", "value": "drop_role"}},
+                  {"field": {"name": "general_sql_command.str", "value": "alter_tablespace"}},
+                  {"field": {"name": "general_sql_command.str", "value": "create_tablespace"}},
+                  {"field": {"name": "general_sql_command.str", "value": "drop_tablespace"}},
+                  {"field": {"name": "general_sql_command.str", "value": "analyze"}},
+                  {"field": {"name": "general_sql_command.str", "value": "optimize"}},
+                  {"field": {"name": "general_sql_command.str", "value": "check"}},
+                  {"field": {"name": "general_sql_command.str", "value": "repair"}},
+                  {"field": {"name": "general_sql_command.str", "value": "purge"}},
+                  {"field": {"name": "general_sql_command.str", "value": "purge_before_date"}},
+                  {"field": {"name": "general_sql_command.str", "value": "change_master"}},
+                  {"field": {"name": "general_sql_command.str", "value": "change_replication_source"}},
+                  {"field": {"name": "general_sql_command.str", "value": "start_slave"}},
+                  {"field": {"name": "general_sql_command.str", "value": "stop_slave"}},
+                  {"field": {"name": "general_sql_command.str", "value": "start_replica"}},
+                  {"field": {"name": "general_sql_command.str", "value": "stop_replica"}},
+                  {"field": {"name": "general_sql_command.str", "value": "reset"}},
+                  {"field": {"name": "general_sql_command.str", "value": "lock_tables"}},
+                  {"field": {"name": "general_sql_command.str", "value": "unlock_tables"}},
+                  {"field": {"name": "general_sql_command.str", "value": "kill"}},
+                  {"field": {"name": "general_sql_command.str", "value": "install_plugin"}},
+                  {"field": {"name": "general_sql_command.str", "value": "uninstall_plugin"}},
+                  {"field": {"name": "general_sql_command.str", "value": "install_component"}},
+                  {"field": {"name": "general_sql_command.str", "value": "uninstall_component"}},
+                  {"field": {"name": "general_sql_command.str", "value": "shutdown"}},
+                  {"field": {"name": "general_sql_command.str", "value": "flush"}}
+                ]
+              }
+            ]
+          }
+        }
+      }
+    ]
+  }
+}

@@ -58,6 +58,19 @@ log_slow_extra = ON
 # the history keeps example statements for it.
 performance_schema = ON
 performance_schema_consumer_events_statements_history_long = ON
+
+#------------------------------------------------------------------------------
+# Audit log: the audit_log_filter component (Ansible installs it) with the filter {{ mysql_audit_log_filter }}:
+# who ran which DDL / DCL, when and from where. No DML, no SELECTs, no logins.
+#------------------------------------------------------------------------------
+# loose_: as for validate_password above, the first start runs before the component is installed.
+loose_audit_log_filter.format = JSON
+loose_audit_log_filter.file = {{ mysql_audit_log_dir }}/audit.log
+# A new file every 100 MB; the oldest files go once all of them pass 1 GB.
+loose_audit_log_filter.rotate_on_size = 104857600
+loose_audit_log_filter.max_size = 1048576000
+# Through a buffer: statements don't wait for the log to be written.
+loose_audit_log_filter.strategy = ASYNCHRONOUS
 {% if mysql_settings_extra %}
 
 #------------------------------------------------------------------------------

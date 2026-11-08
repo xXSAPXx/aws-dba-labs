@@ -33,6 +33,17 @@
     insertafter: EOF
   notify: Restart MySQL
 
+# Before MySQL starts with lab.cnf: without its folder the audit log component stays off. SELinux (enforcing on
+# Rocky Linux) lets MySQL write only to its own log type.
+- name: Create the audit log folder
+  ansible.builtin.file:
+    path: "{{ mysql_audit_log_dir }}"
+    state: directory
+    owner: mysql
+    group: mysql
+    mode: "0750"
+    setype: mysqld_log_t
+
 - name: Write the lab settings
   ansible.builtin.template:
     src: lab.cnf.j2
@@ -100,6 +111,77 @@
     group: root
     mode: "0600"
   no_log: true
+
+
+##################################################################
+# Audit log: who ran which DDL / DCL, when and from where (no DML)
+# Before the databases and users, so their creation is in the log too.
+##################################################################
+
+- name: Check whether the audit log component is installed
+  ansible.mysql.mysql_query:
+    query: SELECT COUNT(*) AS installed FROM mysql.component WHERE component_urn = 'file://component_audit_log_filter'
+    login_user: root
+    login_password: "{{ mysql_root_password }}"
+    login_unix_socket: "{{ mysql_socket }}"
+  register: mysql_audit_component
+  changed_when: false
+
+# Percona's script creates the audit tables in the mysql schema, then installs the component. The restart starts
+# the component with its settings from lab.cnf (the log file is read only at startup).
+- name: Install the audit log component
+  ansible.builtin.shell: |
+    set -eo pipefail
+    script=$(rpm -ql percona-server-server | grep '/audit_log_filter_linux_install.sql$')
+    mysql --defaults-file=/root/.my.cnf -D mysql < "$script"
+  args:
+    executable: /bin/bash
+  when: mysql_audit_component.query_result[0][0].installed == 0
+  changed_when: true
+  notify: Restart MySQL
+
+- name: Restart MySQL with the audit log component
+  ansible.builtin.meta: flush_handlers
+
+# The filter goes in as an SQL string, built inside the query: a template that is only JSON would come back as
+# a dictionary. The filter has no quotes in it.
+- name: Set the audit filter for every account
+  vars:
+    mysql_audit_filter_sql: "'{{ lookup('ansible.builtin.file', 'audit_log_filter_' ~ mysql_audit_log_filter ~ '.json') | from_json | to_json }}'"
+  block:
+    - name: Check the audit filter and its assignment to every account ('%')
+      ansible.mysql.mysql_query:
+        query: >-
+          SELECT
+          (SELECT COUNT(*) FROM mysql.audit_log_filter
+           WHERE name = '{{ mysql_audit_log_filter }}' AND filter = CAST({{ mysql_audit_filter_sql }} AS JSON)) AS filter_set,
+          (SELECT COUNT(*) FROM mysql.audit_log_user
+           WHERE username = '%' AND filtername = '{{ mysql_audit_log_filter }}') AS assigned
+        login_user: root
+        login_password: "{{ mysql_root_password }}"
+        login_unix_socket: "{{ mysql_socket }}"
+      register: mysql_audit_filter
+      changed_when: false
+
+    # As in the MySQL notes: remove, set, assign to every account, flush. Only when something differs: every set
+    # stores a new revision, and the flush detaches open sessions until they reconnect.
+    - name: Set the audit filter and assign it to every account
+      ansible.mysql.mysql_query:
+        query:
+          - SELECT audit_log_filter_remove_filter('{{ mysql_audit_log_filter }}') AS result
+          - SELECT audit_log_filter_set_filter('{{ mysql_audit_log_filter }}', {{ mysql_audit_filter_sql }}) AS result
+          - SELECT audit_log_filter_set_user('%', '{{ mysql_audit_log_filter }}') AS result
+          - SELECT audit_log_filter_flush() AS result
+        login_user: root
+        login_password: "{{ mysql_root_password }}"
+        login_unix_socket: "{{ mysql_socket }}"
+      when: mysql_audit_filter.query_result[0][0].filter_set == 0 or mysql_audit_filter.query_result[0][0].assigned == 0
+      register: mysql_audit_filter_set
+      changed_when: true
+      # Each function answers OK, or the reason it failed.
+      failed_when: >-
+        mysql_audit_filter_set.failed or
+        mysql_audit_filter_set.query_result | flatten | map(attribute='result') | reject('equalto', 'OK') | list | length > 0
 
 
 ##################################################################
