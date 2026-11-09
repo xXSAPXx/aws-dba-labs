@@ -68,7 +68,7 @@ A variable that one play's role defines by default is not known in another play.
 | `postgresql_tools` | `ansible/roles/` | Tools on the database server. Live: pg_activity (overview of sessions, waits, blocking) and pg_top (per-PID query, EXPLAIN, locks). From the server log: pgBadger (report of slow statements, lock waits, errors) |
 | `postgresql_client` | `ansible/roles/` | psql and pgbench on the load generator, database passwords in `~/.pgpass` |
 | `liquibase` | `ansible/roles/` | Java, Liquibase and the lab's JDBC drivers on the PMM server (PostgreSQL by default, MySQL Connector/J in the MySQL lab); copies a changelog from the repo (e.g. `schema/shop`, `schema/sportsbook`) and applies the pending migrations; `liquibase-<db>` wrapper command |
-| `labapp` | `ansible/roles/` | The lab's simulated application ([tools/labapp](../tools/labapp/README.md)): the availability probe and the shop workload as services, their metrics in PMM, the "Lab: Application" dashboard |
+| `labapp` | `ansible/roles/` | The lab's simulated application ([tools/labapp](../tools/labapp/README.md)): the availability probe and the shop workload as services, their annotations in the lab's Grafana, and the "PostgreSQL lock blocking" dashboard in PMM ("Lab: Application" comes from `prometheus_grafana`) |
 | `postgresql` | `labs/postgresql-single/ansible/roles/` | Percona PostgreSQL 17, its configuration, pg_stat_monitor, the `pmm` monitoring user |
 | `mysql_client` | `ansible/roles/` | The MySQL client on the load generator, the admin login in `~/.my.cnf` |
 | `mysql_tools` | `ansible/roles/` | Tools on the MySQL server. Live: Dolphie (a real-time dashboard: processlist, transactions and locks, InnoDB, replication, metric graphs) |

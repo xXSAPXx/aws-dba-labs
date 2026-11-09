@@ -82,10 +82,10 @@ module "postgresql_role" {
 module "postgresql_ec2_instance" {
   source = "../../../modules/db_server"
 
-  # --- Security group: SSH, PostgreSQL and ping from the VPC ---
+  # --- Security group: SSH, PostgreSQL, node_exporter and ping from the VPC ---
   vpc_id                = module.vpc.vpc_id
   vpc_cidr_block        = module.vpc.vpc_cidr_block
-  db_ports              = [5432]
+  db_ports              = [5432, 9100] # PostgreSQL, node_exporter (for Prometheus on the PMM server)
   sec_group_name        = "PostgreSQL_EC2_Instance_SG"
   sec_group_description = "Allow SSH / PMM and PostgreSQL Ports"
 
@@ -106,6 +106,15 @@ module "postgresql_ec2_instance" {
 }
 
 
+# Monitoring: the PMM server's IAM role, so Prometheus (next to PMM) finds the lab's servers by their tags
+######################################################################################
+module "monitoring_role" {
+  source = "../../../modules/ec2_discovery_role"
+
+  name = "postgresql-single-monitoring"
+}
+
+
 # Create the EC2: (PMM Server + SSH jump host)
 ######################################################################################
 module "pmm_server" {
@@ -115,6 +124,7 @@ module "pmm_server" {
   vpc_id                = module.vpc.vpc_id
   vpc_cidr_block        = module.vpc.vpc_cidr_block
   admin_cidr            = var.admin_cidr # Only your IP can reach SSH and the PMM UI.
+  extra_admin_ports     = [3000, 9090]   # Grafana and Prometheus, also from your IP only
   sec_group_name        = "PMM_Server_SG"
   sec_group_description = "Allow SSH / PMM Ports"
 
@@ -124,8 +134,9 @@ module "pmm_server" {
   cpu_credits   = var.cpu_credits
   key_name      = var.aws_key_pair
   subnet_id     = module.vpc.public_subnet_1_id
-  #iam_instance_profile         = module.iam_roles............
-  pmm_tag_name = "pmm-server"
+  pmm_tag_name  = "pmm-server"
+  # Its IAM role: read the EC2 instances, for Prometheus's service discovery
+  iam_instance_profile = module.monitoring_role.instance_profile_name
 
   # EBS Volume Settings:
   volume_size = var.pmm_volume_size

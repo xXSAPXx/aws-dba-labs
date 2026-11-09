@@ -9,9 +9,7 @@
   "refresh": "5s",
   "time": { "from": "now-1h", "to": "now" },
   "schemaVersion": 39,
-  "links": [
-    { "title": "PostgreSQL lock blocking", "type": "link", "icon": "dashboard", "url": "/graph/d/postgresql-lock-blocking/postgresql-lock-blocking", "tooltip": "Who blocks whom: root blockers by user, with their statements", "keepTime": true, "targetBlank": false }
-  ],
+  "links": [],
   "annotations": {
     "list": [
       {
@@ -46,7 +44,7 @@
         "label": "Metrics",
         "type": "datasource",
         "query": "prometheus",
-        "current": { "selected": true, "text": "Metrics", "value": "Metrics" },
+        "current": { "selected": true, "text": "Prometheus", "value": "prometheus" },
         "hide": 2,
         "includeAll": false,
         "multi": false,

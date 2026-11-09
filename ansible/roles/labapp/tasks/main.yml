@@ -1,4 +1,12 @@
 ---
+- name: Check that the lab set the Grafana and PMM passwords
+  ansible.builtin.assert:
+    that:
+      - labapp_grafana_password | length > 0
+      - labapp_pmm_password | length > 0
+    fail_msg: labapp_grafana_password (the annotations) and labapp_pmm_password (the PMM dashboards) must be set (group_vars).
+    quiet: true
+
 ##################################################################
 # Install labapp:
 ##################################################################
@@ -116,9 +124,10 @@
     daemon_reload: true
   when: labapp_workload_enabled
 
-- name: Apply changes before registering with PMM
+- name: Apply the changes
   ansible.builtin.meta: flush_handlers
 
+# Prometheus scrapes them (the lab's prometheus_grafana_static_jobs).
 - name: Wait for the metrics
   ansible.builtin.uri:
     url: http://127.0.0.1:{{ item.port }}/metrics
@@ -126,14 +135,14 @@
   until: labapp_metrics.status == 200
   retries: 30
   delay: 2
-  loop: "{{ labapp_pmm_exporters }}"
+  loop: "{{ labapp_exporters }}"
   loop_control:
     label: "{{ item.name }}"
 
 
 ##################################################################
-# PMM: collect the metrics, upload the dashboards:
+# PMM: the dashboards that stay there
 ##################################################################
 
-- name: Register with PMM and upload the dashboards
+- name: Upload the PMM dashboards
   ansible.builtin.import_tasks: pmm.yml

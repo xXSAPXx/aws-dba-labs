@@ -7,9 +7,8 @@
   'outage_log': '/var/log/labapp/outages.jsonl',
   'targets': labapp_targets,
   'grafana': {
-    'url': labapp_pmm_url ~ '/graph',
-    'user': labapp_pmm_user,
-    'password': labapp_pmm_password,
-    'verify_tls': false,
+    'url': labapp_grafana_url,
+    'user': labapp_grafana_user,
+    'password': labapp_grafana_password,
   },
 } | to_nice_json }}

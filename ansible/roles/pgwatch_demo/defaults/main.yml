@@ -9,8 +9,9 @@ pgwatch_demo_container_name: pgwatch-demo
 # Where the demo writes its Grafana data source (fixed by the role, see tasks).
 pgwatch_demo_datasource_file: /etc/grafana/provisioning/datasources/pg_ds.yml
 
-# Published on 127.0.0.1 only: reach them through an SSH tunnel (lab README).
-pgwatch_demo_grafana_port: 3000
+# Published on 127.0.0.1 only: reach them through an SSH tunnel (lab README). Not 3000: the lab's own Grafana
+# (role prometheus_grafana) has that port.
+pgwatch_demo_grafana_port: 3001
 pgwatch_demo_web_port: 8080
 
 # Logins. Without them, the demo's Grafana lets anyone view and its web UI lets anyone change the configuration.

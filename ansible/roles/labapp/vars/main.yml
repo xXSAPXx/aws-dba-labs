@@ -1,13 +1,11 @@
 ---
-# Services PMM collects metrics from, and the dashboards uploaded to PMM.
-labapp_pmm_exporters: >-
+# The metrics endpoints, which the lab's Prometheus scrapes (prometheus_grafana_static_jobs).
+labapp_exporters: >-
   {{ [{'name': 'labapp-probe', 'port': labapp_metrics_port}]
      + ([{'name': 'labapp-workload', 'port': labapp_workload_metrics_port}] if labapp_workload_enabled else []) }}
-# The lab's dashboards, uploaded to the "Lab" folder in PMM. `file` is relative to ansible/roles.
-#   Lab: Application: the probe and the shop workload. Without the workload, its rows show "No data".
-#   PostgreSQL lock blocking: the metrics of the PMM client's lock blocking queries (role pmm_client).
+# The dashboards uploaded to the "Lab" folder in PMM. `file` is relative to ansible/roles.
+#   PostgreSQL lock blocking: the metrics of the PMM client's lock blocking queries (role pmm_client), which only
+#   PMM has. Lab: Application is in the lab's Grafana instead (prometheus_grafana_dashboards).
 labapp_dashboards:
-  - file: labapp/files/labapp-dashboard.json
-    uid: labapp
   - file: pmm_client/files/postgresql-lock-blocking-dashboard.json
     uid: postgresql-lock-blocking

@@ -48,7 +48,7 @@ def connect(dsn, timeout, application_name, statement_timeout=None):
 
 
 class Annotations:
-    """Marks events (outages, flash sales, batch jobs) on the PMM (Grafana) dashboards.
+    """Marks events (outages, flash sales, batch jobs) on the lab's Grafana dashboards.
 
     Runs in its own thread, so it never delays the caller. A key links the start of an event to its end:
     add() creates a point annotation, finish() turns it into a time range (or creates the range).
@@ -93,5 +93,5 @@ class Annotations:
                         self._request("PATCH", f"/{annotation_id}", body)
                     else:
                         self._request("POST", "", body)
-            except Exception as exc:  # PMM down or busy: measuring goes on regardless
+            except Exception as exc:  # Grafana down or busy: measuring goes on regardless
                 LOG.warning("could not write the Grafana annotation: %s", short_error(exc))
