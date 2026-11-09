@@ -1,11 +1,14 @@
 ---
 # Prometheus and Grafana in Docker (one Compose project), next to PMM on the PMM server.
-# Prometheus scrapes itself and Grafana, and finds the lab's servers by their tags (EC2 service discovery,
-# with the server's IAM role) to scrape their node_exporter. No dashboards or alert rules yet.
+# Prometheus scrapes itself and Grafana, finds the lab's servers by their tags (EC2 service discovery, with the
+# server's IAM role) to scrape their node_exporter, and scrapes the applications at fixed addresses. Grafana gets
+# the lab's dashboards from files. No alert rules yet.
 
-prometheus_grafana_dir: /opt/prometheus-grafana # compose.yaml, prometheus.yml, Grafana's provisioning
+prometheus_grafana_dir: /opt/prometheus-grafana # compose.yaml, prometheus.yml, Grafana's provisioning and dashboards
 prometheus_grafana_prometheus_image: prom/prometheus:v3.15.1
-prometheus_grafana_grafana_image: grafana/grafana:13.2.4 # the open-source edition (grafana-oss has no 13.x tags)
+# The open-source edition (grafana-oss has no 13.x tags). For a dashboard meant for production, build it on
+# production's version instead: -e prometheus_grafana_grafana_image=grafana/grafana:<version>.
+prometheus_grafana_grafana_image: grafana/grafana:13.3.0
 
 # Ports on the server (the lab's security group opens them to your IP only).
 prometheus_grafana_prometheus_port: 9090
@@ -23,6 +26,15 @@ prometheus_grafana_ec2_lab: "" # set by the lab, required
 prometheus_grafana_node_exporter: false
 prometheus_grafana_node_exporter_port: 9100
 prometheus_grafana_node_exporter_skip: []
+
+# Applications scraped at fixed addresses, one job each, e.g. the lab's application on this server (from its
+# container, Prometheus reaches the server's own ports over its private IP):
+#   - { name: sportsbook-workload, targets: ["10.0.1.12:9312"] }
+prometheus_grafana_static_jobs: []
+
+# Dashboards: JSON files on the Ansible machine, provisioned into Grafana's folder "Lab". Edits in the UI are
+# allowed and kept, until the playbook brings a changed file.
+prometheus_grafana_dashboards: []
 
 # Grafana's admin password: set by the lab (group_vars), required.
 prometheus_grafana_admin_password: ""

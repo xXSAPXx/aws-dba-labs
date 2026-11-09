@@ -31,8 +31,10 @@ services:
     ports:
       - "{{ prometheus_grafana_grafana_port }}:3000"
     volumes:
-      # Only the data sources: the image's other provisioning folders (dashboards, alerting, plugins) stay.
+      # The data sources and the dashboards: the image's other provisioning folders (alerting, plugins) stay.
       - ./grafana-provisioning/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./grafana-provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./dashboards:/var/lib/grafana-dashboards:ro
       - grafana-data:/var/lib/grafana
 
 volumes:

@@ -18,6 +18,8 @@ mysql_sb_feed_password: "{{ lookup('ansible.builtin.password', playbook_dir ~ '/
 mysql_sb_batch_password: "{{ lookup('ansible.builtin.password', playbook_dir ~ '/credentials/mysql_sb_batch_password', length=24, chars=['ascii_letters', 'digits']) }}"
 mysql_sb_reporting_password: "{{ lookup('ansible.builtin.password', playbook_dir ~ '/credentials/mysql_sb_reporting_password', length=24, chars=['ascii_letters', 'digits']) }}"
 mysql_sb_support_password: "{{ lookup('ansible.builtin.password', playbook_dir ~ '/credentials/mysql_sb_support_password', length=24, chars=['ascii_letters', 'digits']) }}"
+# The availability probe (sportsbook-probe): its own database, probe.
+mysql_sb_probe_password: "{{ lookup('ansible.builtin.password', playbook_dir ~ '/credentials/mysql_sb_probe_password', length=24, chars=['ascii_letters', 'digits']) }}"
 
 # Size of the generated sportsbook data: 1 = 100,000 players and 1,000,000 bets (about 1.5 GB).
 # Used only when the data is first generated.

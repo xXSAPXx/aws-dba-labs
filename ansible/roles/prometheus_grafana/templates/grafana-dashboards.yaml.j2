@@ -1,0 +1,13 @@
+# Managed by Ansible (role: prometheus_grafana). The lab's dashboards, from the JSON files in
+# {{ prometheus_grafana_dir }}/dashboards (prometheus_grafana_dashboards), in the folder "Lab".
+apiVersion: 1
+
+providers:
+  - name: lab
+    folder: Lab
+    type: file
+    # Edits in the UI are saved and kept, until the playbook brings a changed file: then the file wins.
+    allowUiUpdates: true
+    updateIntervalSeconds: 30
+    options:
+      path: /var/lib/grafana-dashboards

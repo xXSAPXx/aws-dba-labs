@@ -14,6 +14,12 @@ scrape_configs:
   - job_name: grafana
     static_configs:
       - targets: [grafana:3000]
+{% for job in prometheus_grafana_static_jobs %}
+
+  - job_name: {{ job.name }}
+    static_configs:
+      - targets: {{ job.targets | to_json }}
+{% endfor %}
 
   # The lab's servers are found through the EC2 API by their Lab tag; the server's IAM role gives the access.
   # Status > Service discovery shows every server found, with its labels, and which ones a job drops.

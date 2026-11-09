@@ -1,8 +1,13 @@
 # sportsbook: a sportsbook's production traffic on MySQL
 
-`sportsbook` plays a sports betting platform against the [sportsbook database](../../schema/sportsbook/README.md) in the [mysql-single](../../labs/mysql-single/) lab: players, the odds feed of live matches, and the back office's batch jobs and reports. It runs on the PMM server, connects over the network like an application server, and reports to PMM. It is the MySQL counterpart of the shop's [labapp](../labapp/README.md).
+`sportsbook` plays a sports betting platform against the [sportsbook database](../../schema/sportsbook/README.md) in the [mysql-single](../../labs/mysql-single/) lab: players, the odds feed of live matches, and the back office's batch jobs and reports. It runs on the PMM server, connects over the network like an application server, and reports to the lab's Prometheus and Grafana. It is the MySQL counterpart of the shop's [labapp](../labapp/README.md).
 
-The Ansible role [`sportsbook`](../../ansible/roles/sportsbook/) installs it and starts it as the service **`sportsbook-workload`**.
+The Ansible role [`sportsbook`](../../ansible/roles/sportsbook/) installs it and starts it as two services:
+
+- **`sportsbook-probe`** checks the database continuously and measures downtime and latency ([the probe](#the-probe)).
+- **`sportsbook-workload`** is the sportsbook's traffic.
+
+Both report to one Grafana dashboard, **Lab → Lab: Sportsbook** ([the dashboard](#the-dashboard)).
 
 ## Three kinds of traffic
 
@@ -76,7 +81,7 @@ A job never runs twice at once; if the previous run is still going, the next one
 
 The reconciliation checks that the wallets hold exactly what the ledger adds up to, within one snapshot. Its result is in the job's log line and annotation: `wallets and ledger agree` or `MISMATCH`.
 
-Settlement, bonus awards and the report are marked on the PMM dashboards when they do something; kick-offs too.
+Settlement, bonus awards and the report are marked on the Grafana dashboards when they do something; kick-offs too.
 
 ## Commands
 
@@ -91,6 +96,8 @@ sportsbook load kickoff 10                          # kick off 10 matches now
 sportsbook load settlement-mode batched             # settle in batches of 500 (single_transaction: one per match)
 sportsbook load run regulatory_report               # run a job or report now
 journalctl -u sportsbook-workload -f
+sportsbook outages                                  # the outages the probe measured
+journalctl -u sportsbook-probe -f
 ```
 
 `sportsbook load` changes last until the service restarts.
@@ -110,9 +117,48 @@ The role's defaults (`ansible/roles/sportsbook/defaults/main.yml`), overridable 
 | `sportsbook_feed` | see the file | Kick-off interval and size, match length, goals, suspension, odds moves |
 | `sportsbook_jobs` | the schedule above | `every`, `first`; `settlement` also takes `mode` and `batch_size`, `regulatory_report` `target` |
 
+## The probe
+
+The `sportsbook-probe` service checks the database continuously, as sb_probe in its own `probe` database:
+
+| Check | How | Default |
+|---|---|---|
+| **write** | Writes a heartbeat row (`INSERT ... ON DUPLICATE KEY UPDATE`) on a persistent connection | every 0.25 s |
+| **connect** | Opens a new connection and runs `SELECT 1`, like a reconnecting application | every 1 s |
+
+A failed **write** check is downtime, also when the server still answers reads: `read_only`, a full disk, a commit that hangs. An outage starts at the first failed write and ends at the next successful one, so durations are accurate to about 0.25 s. Every connection attempt and statement gives up after 2 s, so a hung or unreachable server counts as down instead of stalling the probe.
+
+For each outage, the probe:
+
+- writes a line to `/var/log/sportsbook/outages.jsonl` (`sportsbook outages` lists them);
+- logs its start and end to the journal (`journalctl -u sportsbook-probe`);
+- marks it as a red time range on the Grafana dashboards.
+
+It creates its table, `probe.heartbeat`, on the first run only, so a reconnect runs no DDL and adds nothing to the audit log. Settings: `sportsbook_probe_*` in the role's defaults.
+
+## The dashboard
+
+**Lab → Lab: Sportsbook** in the lab's Grafana (`http://<pmm public IP>:3000`), from [`sportsbook-dashboard.json`](../../ansible/roles/sportsbook/files/sportsbook-dashboard.json):
+
+- **Overview:** database writes up or down, the ongoing outage, target and completed rates, player errors, the mode (normal, kick-off surge, paused).
+- **Availability (probe):** outages and downtime in the time range, write and connect latency, UP/DOWN over time.
+- **Players:** bet placement p95, queued requests, requests, response times and errors by type and kind.
+- **Matches, odds feed and money:** live matches, gross gaming revenue, stakes, settled bets, odds feed actions and errors, money per minute by flow.
+- **Batch jobs and reports:** when each one ran, and how long.
+
+Outages are marked in red, kick-offs and batch jobs in purple. A link at the top opens the MySQL backup dashboards when they are imported. Edits in Grafana are kept until the file in the repo changes: then the playbook brings the new version.
+
 ## Metrics
 
-Served on port 9312 (`/metrics`), collected by PMM as the external service `sportsbook-workload`.
+The workload serves its metrics on port 9312 (`/metrics`), the probe on 9313. The lab's Prometheus scrapes both (jobs `sportsbook-workload` and `sportsbook-probe`).
+
+| Metric | Meaning |
+|---|---|
+| `sportsbook_probe_up{target, check}` | 1 if the last write or connect check succeeded |
+| `sportsbook_probe_latency_seconds{target, check}` | Histogram of the successful checks' duration |
+| `sportsbook_probe_checks_total{target, check, result}` | Checks run, ok or error |
+| `sportsbook_probe_outages_total{target}`, `sportsbook_probe_downtime_seconds_total{target}` | Completed write outages, and their total duration |
+| `sportsbook_probe_current_outage_seconds{target}`, `sportsbook_probe_last_outage_seconds{target}` | The ongoing outage (0 when up), and the last one |
 
 | Metric | Meaning |
 |---|---|
@@ -131,5 +177,4 @@ Served on port 9312 (`/metrics`), collected by PMM as the external service `spor
 ## Not built yet
 
 - **Incident scenarios on demand**, like labapp's: a wrong settlement `UPDATE` to recover with point-in-time recovery, an `ALTER TABLE bets` during a peak, a forgotten transaction, a connection storm.
-- **A PMM dashboard** for these metrics.
 - **Redis or Valkey** for the odds cache, sessions, rate limits and the leaderboard.
