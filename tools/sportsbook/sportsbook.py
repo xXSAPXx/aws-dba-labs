@@ -5,6 +5,18 @@ Commands:
   sportsbook workload --config FILE   Run the traffic (the sportsbook-workload service), see workload.py.
   sportsbook load status | rate N | pause | resume | kickoff [MATCHES] | settlement-mode MODE | run JOB
                                       Control the running workload.
+  sportsbook probe --config FILE      Run the availability probe (the sportsbook-probe service), see probe.py.
+  sportsbook outages [--log FILE] [--last N]
+                                      List the outages the probe measured.
+
+Probe config (JSON):
+  {
+    "interval": 0.25, "connect_interval": 1.0, "timeout": 2.0,
+    "metrics_address": "0.0.0.0", "metrics_port": 9313, "outage_log": "/var/log/sportsbook/outages.jsonl",
+    "targets": [{"name": "mysql-source", "db": {"host": "mysql-source", "user": "sb_probe", "password": "...",
+                                                 "database": "probe"}}],
+    "grafana": {"url": "http://127.0.0.1:3000", "user": "admin", "password": "..."}
+  }
 
 Workload config (JSON):
   {
@@ -16,7 +28,7 @@ Workload config (JSON):
     "mix": {}, "surge_mix": {}, "wave": {"period": 3600, "amplitude": 0.4}, "surge": {"multiplier": 3, "duration": 120},
     "feed": {"kickoff_every": 600, "kickoff_first": 60, "kickoff_matches": 6, "match_seconds": 900, ...},
     "jobs": {"settlement": {"every": 30, "first": 30, "mode": "single_transaction"}, ...},
-    "grafana": {"url": "https://127.0.0.1/graph", "user": "admin", "password": "...", "verify_tls": false}
+    "grafana": {"url": "http://127.0.0.1:3000", "user": "admin", "password": "..."}
   }
 """
 
@@ -46,6 +58,20 @@ def cmd_workload(args):
     with open(args.config, encoding="utf-8") as f:
         cfg = json.load(f)
     workload.run(cfg, stop_event())
+
+
+def cmd_probe(args):
+    import probe
+
+    with open(args.config, encoding="utf-8") as f:
+        cfg = json.load(f)
+    probe.run(cfg, stop_event())
+
+
+def cmd_outages(args):
+    import probe
+
+    probe.list_outages(args.log, args.last)
 
 
 def cmd_load(args):
@@ -78,6 +104,16 @@ def main():
                       "settlement-mode: single_transaction or batched; run: job name")
     load.add_argument("--url", default=DEFAULT_CONTROL_URL, help=f"control endpoint (default: {DEFAULT_CONTROL_URL})")
     load.set_defaults(func=cmd_load)
+
+    probe = sub.add_parser("probe", help="run the availability probe")
+    probe.add_argument("--config", required=True, help="JSON config file")
+    probe.add_argument("--debug", action="store_true", help="log every failed check")
+    probe.set_defaults(func=cmd_probe)
+
+    outages = sub.add_parser("outages", help="list the outages the probe measured")
+    outages.add_argument("--log", default="/var/log/sportsbook/outages.jsonl", help="the probe's outage log")
+    outages.add_argument("--last", type=int, default=20, help="show the last N outages (default: 20)")
+    outages.set_defaults(func=cmd_outages)
 
     args = parser.parse_args()
     logging.basicConfig(

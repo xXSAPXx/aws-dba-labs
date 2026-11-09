@@ -25,6 +25,7 @@ mysql_pmm_server_ip: "{{ hostvars[groups['pmm_server'][0]]['private_ip'] }}"
 mysql_databases:
   - sportsbook # the sportsbook application (schema/sportsbook)
   - sbtest # sysbench, on demand (sysbench.yml)
+  - probe # the availability probe's heartbeat (sportsbook-probe)
 
 # The sportsbook's roles: their privileges are granted by the database migrations (schema/sportsbook/changes/0008-access.sql).
 mysql_roles:
@@ -60,6 +61,12 @@ mysql_users:
   - name: sb_support
     host: "{{ mysql_pmm_server_ip }}"
     password: "{{ mysql_sb_support_password }}"
+    resource_limits: { MAX_USER_CONNECTIONS: 5 }
+  # The availability probe: only its own database. CREATE: it creates its heartbeat table on the first run.
+  - name: sb_probe
+    host: "{{ mysql_pmm_server_ip }}"
+    password: "{{ mysql_sb_probe_password }}"
+    priv: "probe.*:SELECT,INSERT,UPDATE,CREATE"
     resource_limits: { MAX_USER_CONNECTIONS: 5 }
   # PMM: reads statistics, no data (PMM 3 documentation).
   - name: pmm

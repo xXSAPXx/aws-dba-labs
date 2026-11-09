@@ -30,7 +30,12 @@ sportsbook_db:
   batch: { host: "{{ groups['mysql'][0] }}", user: sb_batch, password: "{{ mysql_sb_batch_password }}", database: sportsbook }
   reporting: { host: "{{ groups['mysql'][0] }}", user: sb_reporting, password: "{{ mysql_sb_reporting_password }}", database: sportsbook }
   support: { host: "{{ groups['mysql'][0] }}", user: sb_support, password: "{{ mysql_sb_support_password }}", database: sportsbook }
-sportsbook_pmm_password: "{{ pmm_admin_password }}"
+# The probe: a heartbeat in its own database (probe) as sb_probe, from the application's side. A failed write is downtime.
+sportsbook_probe_targets:
+  - name: "{{ groups['mysql'][0] }}"
+    db: { host: "{{ groups['mysql'][0] }}", user: sb_probe, password: "{{ mysql_sb_probe_password }}", database: probe }
+# The annotations (kick-offs, batch jobs, outages) go to the lab's Grafana.
+sportsbook_grafana_password: "{{ grafana_admin_password }}"
 
 # Prometheus and Grafana next to PMM: Prometheus finds this lab's servers by their Lab tag.
 prometheus_grafana_ec2_lab: mysql-single
@@ -38,6 +43,12 @@ prometheus_grafana_admin_password: "{{ grafana_admin_password }}"
 # node_exporter runs on the MySQL servers (site.yml), not on this one.
 prometheus_grafana_node_exporter: true
 prometheus_grafana_node_exporter_skip: "{{ groups['pmm_server'] }}" # the inventory names are the EC2 Name tags
+# The sportsbook on this server: its metrics (the sportsbook role's ports) and its dashboard, Lab: Sportsbook.
+prometheus_grafana_static_jobs:
+  - { name: sportsbook-workload, targets: ["{{ private_ip }}:9312"] }
+  - { name: sportsbook-probe, targets: ["{{ private_ip }}:9313"] }
+prometheus_grafana_dashboards:
+  - "{{ playbook_dir }}/../../../ansible/roles/sportsbook/files/sportsbook-dashboard.json"
 
 # sysbench, on demand (sysbench.yml): rate, size and test are the sysbench role's defaults.
 sysbench_mysql_host: "{{ groups['mysql'][0] }}"

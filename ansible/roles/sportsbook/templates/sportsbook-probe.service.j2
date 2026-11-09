@@ -1,0 +1,23 @@
+# Managed by Ansible (role: sportsbook).
+[Unit]
+Description=sportsbook probe: the database's availability and latency, measured from the application's side
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+User={{ sportsbook_user }}
+Group={{ sportsbook_user }}
+Environment=PYTHONUNBUFFERED=1
+ExecStart={{ sportsbook_dir }}/venv/bin/python {{ sportsbook_dir }}/sportsbook.py probe --config /etc/sportsbook/probe.json
+Restart=always
+RestartSec=2
+# Outage log: /var/log/sportsbook/outages.jsonl (read it with: sportsbook outages)
+LogsDirectory=sportsbook
+LogsDirectoryMode=0755
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

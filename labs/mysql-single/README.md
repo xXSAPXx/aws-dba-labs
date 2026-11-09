@@ -69,22 +69,23 @@ ssh mysql-source             # MySQL, through the jump host
 | `backup` | the server itself (socket) | what XtraBackup needs and no more | `mysql_backup_password` |
 | `sb_migrator` | the PMM server | owns the `sportsbook` database, runs its migrations | `mysql_sb_migrator_password` |
 | `sb_app`, `sb_feed`, `sb_batch`, `sb_reporting`, `sb_support` | the PMM server | their role's privileges in `sportsbook` ([who may do what](../../schema/sportsbook/README.md#who-may-do-what)) | `mysql_sb_<name>_password` |
+| `sb_probe` | the PMM server | the `probe` database only: the availability probe's heartbeat | `mysql_sb_probe_password` |
 
 `skip_name_resolve` is on, so accounts are matched by IP: everyone but `root`, `pmm` and `backup` logs in only from the PMM server's private IP.
 
 ### Prometheus and Grafana
 
-Next to PMM on `mysql-pmm`, in Docker (one Compose project in `/opt/prometheus-grafana`): the stack your backup scripts report to, through node_exporter on `mysql-source`.
+Next to PMM on `mysql-pmm`, in Docker (one Compose project in `/opt/prometheus-grafana`): the stack your backup scripts report to, through node_exporter on `mysql-source`, and the sportsbook's metrics and dashboard.
 
 | | URL (`terraform output`) | Login |
 |---|---|---|
-| Grafana 13.2 | `grafana_url`: `http://<pmm public IP>:3000` | `admin`, password in `ansible/credentials/grafana_admin_password` |
+| Grafana 13.3 | `grafana_url`: `http://<pmm public IP>:3000` | `admin`, password in `ansible/credentials/grafana_admin_password` |
 | Prometheus 3.15 | `prometheus_url`: `http://<pmm public IP>:9090` | none; only your IP reaches it |
 
-- **Prometheus** scrapes every 15 s and keeps 1 day: itself, Grafana, and node_exporter (job `node`). No alert rules yet.
+- **Prometheus** scrapes every 15 s and keeps 1 day: itself, Grafana, node_exporter (job `node`), and the sportsbook's workload and probe on `mysql-pmm` (jobs `sportsbook-workload` and `sportsbook-probe`). No alert rules yet.
 - **The lab's servers** are found through the EC2 API by their `Lab` tag (EC2 service discovery): no IP in the configuration, and a new server (a replica) is scraped by itself. The `node` job takes every server found except the PMM server, which runs no node_exporter, and labels each with its EC2 `Name` (`instance="mysql-source"`). *Status → Service discovery* shows every server found and which ones a job drops. The PMM server's IAM role (`mysql-single-monitoring`) may only list the instances.
 - **node_exporter** on `mysql-source` (EPEL package `node-exporter`, service `prometheus-node-exporter`, port 9100): the server's CPU, memory, disks and network, and through its textfile collector every `*.prom` file in **`/var/lib/node_exporter/textfile_collector`**, the directory your backup scripts write their metrics to. A metric line's own `instance` label shows up as `exported_instance`; the target's `instance` is the server's name. The mysqld exporter comes later; PMM has MySQL's metrics.
-- **Grafana** has Prometheus as its data source, and no dashboards yet.
+- **Grafana** has Prometheus as its data source, and the dashboard **Lab → Lab: Sportsbook**: the database's availability as the application sees it, and the sportsbook's traffic ([the dashboard](../../tools/sportsbook/README.md#the-dashboard)). The lab's dashboards come from files (`prometheus_grafana_dashboards`); edits in Grafana are kept until the file in the repo changes. The sportsbook marks outages, kick-offs and batch jobs on it.
 - On the server: `docker logs prometheus`, `docker logs grafana`. Changes to the configuration belong in the role (`ansible/roles/prometheus_grafana`): the playbook overwrites them, checks `prometheus.yml` with `promtool` and restarts what changed.
 
 ### Watch MySQL live: Dolphie
@@ -121,7 +122,7 @@ PMM's Query Analytics reads the statements from the Performance Schema.
 
 ## The traffic: a sportsbook
 
-The [sportsbook application](../../tools/sportsbook/README.md) runs on `mysql-pmm` as the service `sportsbook-workload`:
+The [sportsbook application](../../tools/sportsbook/README.md) runs on `mysql-pmm` as the service `sportsbook-workload`, next to its availability probe `sportsbook-probe`, which writes a heartbeat four times a second and measures every outage. Watch both on **Lab → Lab: Sportsbook** in Grafana.
 
 - **Players:** about 80 requests a second, more after each kick-off. They browse, follow live odds, log in, bet, cash out, deposit and withdraw.
 - **An odds feed:** matches kick off every 10 minutes and last 15. Odds move, goals suspend markets, and full time decides every bet.
@@ -134,6 +135,7 @@ The [sportsbook application](../../tools/sportsbook/README.md) runs on `mysql-pm
 sportsbook load status                  # rates, live matches, running jobs
 sportsbook load kickoff 10              # kick off 10 matches now: the players surge
 journalctl -u sportsbook-workload -f
+sportsbook outages                      # every outage the probe measured, to the 0.25 s
 ```
 
 Every bet, win, deposit and withdrawal is in the ledger, and the wallets always add up to it. The same check after a restore shows whether the restored copy is consistent ([the database](../../schema/sportsbook/README.md)).
@@ -234,6 +236,17 @@ A second deploy on 8 November 2026 checked the replica:
 - **TLS:** the replication connection uses TLS 1.3. Without TLS (`SOURCE_SSL = 0`), the source refused `repl` (`Access denied`, error 1045).
 - **Running the playbook again** changed nothing on the three servers.
 - **Removing it** (a plain `terraform apply`) destroyed only the replica's 6 resources. `mysql-source` kept running, with no restart, and kept serving the sportsbook.
+
+The deploy of 9 November 2026 checked the availability probe and the dashboard, on Grafana 13.3.0:
+- **Prometheus** scrapes the sportsbook's workload and probe (both targets up).
+- **Lab: Sportsbook** is in Grafana's folder "Lab", and every panel's query returns data.
+- **The probe:**
+  - 8 seconds of `super_read_only` were measured as an 8.027 s write outage (error 1290), while reads went on.
+  - A MySQL restart was measured as 11.411 s (error 1053).
+  - Both are in `sportsbook outages`, the journal and the metrics, and on the dashboard as red time ranges with their error.
+- **The heartbeat table** was created once: one `CREATE TABLE` in the audit log, also after the restart's reconnect.
+- **Annotations:** kick-offs, settlement and withdrawals are marked too.
+- **Running the playbook again** changes nothing.
 
 Not tested yet:
 - **sysbench over TLS** (on demand): its login with MySQL 8.4's default authentication.

@@ -1,0 +1,14 @@
+{{ {
+  'interval': sportsbook_probe_interval,
+  'connect_interval': sportsbook_probe_connect_interval,
+  'timeout': sportsbook_probe_timeout,
+  'metrics_address': '0.0.0.0',
+  'metrics_port': sportsbook_probe_metrics_port,
+  'outage_log': '/var/log/sportsbook/outages.jsonl',
+  'targets': sportsbook_probe_targets,
+  'grafana': {
+    'url': sportsbook_grafana_url,
+    'user': sportsbook_grafana_user,
+    'password': sportsbook_grafana_password,
+  },
+} | to_nice_json }}

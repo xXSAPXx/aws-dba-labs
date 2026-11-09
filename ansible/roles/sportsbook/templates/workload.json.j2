@@ -14,9 +14,8 @@
   'feed': sportsbook_feed,
   'jobs': sportsbook_jobs,
   'grafana': {
-    'url': sportsbook_pmm_url ~ '/graph',
-    'user': sportsbook_pmm_user,
-    'password': sportsbook_pmm_password,
-    'verify_tls': false,
+    'url': sportsbook_grafana_url,
+    'user': sportsbook_grafana_user,
+    'password': sportsbook_grafana_password,
   },
 } | to_nice_json }}
