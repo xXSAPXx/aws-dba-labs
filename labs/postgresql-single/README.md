@@ -1,12 +1,12 @@
 # Lab: postgresql-single
 
-A single Percona PostgreSQL 17 server in a private subnet, monitored by PMM 3. Use it to practise configuration, query analysis with pg_stat_monitor and PMM, and the basics before the HA labs. pgBackRest and pg_repack are installed.
+A single Percona PostgreSQL 17 server in a private subnet, monitored by PMM 3, with Prometheus and Grafana next to it for the lab's own dashboards. Use it to practise configuration, query analysis with pg_stat_monitor and PMM, and the basics before the HA labs. pgBackRest and pg_repack are installed.
 
 ## What it deploys
 
 - **VPC** `10.0.0.0/24`: one public subnet, two private subnets in two availability zones, and a NAT gateway.
 - **postgresql-source**: Percona PostgreSQL 17 with pg_stat_monitor, pgAudit and data checksums, in private subnet 1. Its data lives on a separate encrypted gp3 volume (20 GB by default, mounted at `/var/lib/pgsql`). The configuration is sized from the server's RAM and CPUs (`conf.d/01-lab.conf`, every setting commented), and `pg_hba.conf` lets each user reach only its own database, only from the PMM server.
-- **pmm-server**: PMM 3 (Docker) in the public subnet, also the SSH jump host and the application side: the labapp probe and shop workload, and the load tools (psql, pgbench). SSH and the PMM UI accept connections only from your `admin_cidr`.
+- **pmm-server**: PMM 3 (Docker) in the public subnet, with [Prometheus and Grafana](#prometheus-and-grafana) next to it (Docker). Also the SSH jump host and the application side: the labapp probe and shop workload, and the load tools (psql, pgbench). SSH, the PMM UI, Grafana and Prometheus accept connections only from your `admin_cidr`.
 - **Backup bucket** for pgBackRest, destroyed with the lab, and an IAM role for `postgresql-source` to use it: see [Backups: the S3 bucket](#backups-the-s3-bucket).
 
 Both servers run Rocky Linux 10 (the newest official image at deploy time): PostgreSQL on a t3.small, the PMM server on a t3.medium because it also generates the load. Change them with `postgresql_instance_type` and `pmm_instance_type` in `terraform.tfvars`; Rocky Linux 10 needs a current type such as t3 or m7i, not t2.
@@ -64,6 +64,21 @@ psql -h postgresql-source -U dba postgres
 
 PMM UI: the `pmm_url` from `terraform output`. Log in as `admin` with the password from `ansible/credentials/pmm_admin_password`.
 
+### Prometheus and Grafana
+
+Next to PMM on `pmm-server`, in Docker (one Compose project in `/opt/prometheus-grafana`): the lab's own dashboards, and the stack the PostgreSQL backup scripts will report to, through node_exporter on `postgresql-source`. PMM keeps its own metrics and dashboards: Query Analytics, PostgreSQL's metrics, and the [lock blocking](#locks-who-blocks-whom) custom queries.
+
+| | URL (`terraform output`) | Login |
+|---|---|---|
+| Grafana 13.3 | `grafana_url`: `http://<pmm public IP>:3000` | `admin`, password in `ansible/credentials/grafana_admin_password` |
+| Prometheus 3.15 | `prometheus_url`: `http://<pmm public IP>:9090` | none; only your IP reaches it |
+
+- **Prometheus** scrapes every 15 s and keeps 1 day: itself, Grafana, node_exporter (job `node`), and labapp's probe and workload on `pmm-server` (jobs `labapp-probe` and `labapp-workload`). No alert rules yet.
+- **The lab's servers** are found through the EC2 API by their `Lab` tag (EC2 service discovery): no IP in the configuration. The `node` job takes every server found except the PMM server, which runs no node_exporter, and labels each with its EC2 `Name` (`instance="postgresql-source"`). The PMM server's IAM role (`postgresql-single-monitoring`) may only list the instances.
+- **node_exporter** on `postgresql-source` (EPEL package `node-exporter`, port 9100): the server's CPU, memory, disks and network, and every `*.prom` file in `/var/lib/node_exporter/textfile_collector`, where backup scripts write their metrics.
+- **Grafana** has Prometheus as its data source, and the dashboard **Lab → Lab: Application** ([the shop workload](#the-shop-workload), [downtime](#measure-downtime)). The lab's dashboards come from files (`prometheus_grafana_dashboards`); edits in Grafana are kept until the file in the repo changes. labapp marks outages, flash sales, batch jobs and scenarios on it.
+- On the server: `docker logs prometheus`, `docker logs grafana`. Changes to the configuration belong in the role (`ansible/roles/prometheus_grafana`): the playbook overwrites them, checks `prometheus.yml` with `promtool` and restarts what changed.
+
 ## The shop database
 
 The lab's application database: an online shop with 28 tables, about 40 foreign keys, hot rows and big tables, about 1.6 GB of generated data, and five documented production flaws to fix as exercises. It's built and changed only through Liquibase migrations: see [schema/shop](../../schema/shop/README.md).
@@ -86,7 +101,7 @@ psql -h postgresql-source -U shop_reporting shop   # reports: read-only
 
 From the end of the playbook, the [labapp workload](../../tools/labapp/README.md#the-workload) on the PMM server runs the shop's traffic against the `shop` database, like a production application: about 100 requests per second of browsing, carts, checkouts, payments and shipping, rising and falling in an hourly cycle, with a flash sale every 30 minutes. Long-running reports (30 s, 1 min and 5 min) and batch jobs (cart cleanup, restock, a stock recount that locks every stock row for 90 s) run on schedules that fit a 1–2 hour lab.
 
-Watch it on the **Lab → Lab: Application** dashboard in PMM: throughput against the target rate, response times, errors by kind (lock timeouts, cancels, deadlocks, connection errors), and when each report and batch job ran. Control it from the PMM server:
+Watch it on the **Lab → Lab: Application** dashboard in Grafana: throughput against the target rate, response times, errors by kind (lock timeouts, cancels, deadlocks, connection errors), and when each report and batch job ran. Control it from the PMM server:
 
 ```bash
 ssh pmm-server
@@ -162,7 +177,7 @@ For locks, look at **Locks → Most frequent waiting queries** and **Events → 
 
 While the lab runs, the [labapp probe](../../tools/labapp/README.md) on the PMM server writes to PostgreSQL four times a second, like an application would. Whatever you do to the database, it measures what the application experiences: every outage with its exact start, end and duration, and the write and connect latency.
 
-- **In PMM:** the **Lab → Lab: Application** dashboard shows UP / DOWN, the ongoing outage, outages and downtime in the selected time range, and latency, next to the shop workload. Outages are also marked in red on PMM's PostgreSQL dashboards.
+- **In Grafana:** the **Lab → Lab: Application** dashboard shows UP / DOWN, the ongoing outage, outages and downtime in the selected time range, and latency, next to the shop workload. Outages are marked on it in red.
 - **On the PMM server:** `labapp outages` lists every outage measured:
   ```bash
   ssh pmm-server
@@ -186,7 +201,7 @@ The lab adds the missing piece to PMM: the **Lab → PostgreSQL lock blocking** 
 - **What they run:** the blocking statements of the selected users, with the most sessions each blocked and how long its transaction was open.
 - **Who waits:** the users and applications being held up.
 
-It opens from the link at the top of **Lab: Application**. Look at it after you have tried an exercise yourself: it names the culprit.
+It is in PMM, in the folder Lab: its metrics come from PMM's own custom queries, so it stays there, while **Lab: Application** is in the lab's Grafana. Look at it after you have tried an exercise yourself: it names the culprit.
 
 How to read it, and how to install the same in another PMM: [PostgreSQL lock blocking](../../ansible/roles/pmm_client/README.md). Switch it off with `pmm_client_lock_blocking_enabled: false`.
 
@@ -199,10 +214,10 @@ The lab can run CYBERTEC's all-in-one demo image on the PMM server, as a contain
 ```bash
 cd labs/postgresql-single/ansible
 ansible-playbook pgwatch-demo.yml                              # after site.yml; about 1 minute
-ssh -L 3000:localhost:3000 -L 8080:localhost:8080 pmm-server   # keep it open while you look
+ssh -L 3001:localhost:3001 -L 8080:localhost:8080 pmm-server   # keep it open while you look
 ```
 
-- **Grafana:** http://localhost:3000, user `admin`, password in `ansible/credentials/pgwatch_demo_grafana_password`. Start with "0. Health Check" and "2. Database Overview": 22 dashboards in all, data after 2 to 3 minutes.
+- **Grafana:** http://localhost:3001, user `admin`, password in `ansible/credentials/pgwatch_demo_grafana_password`. Port 3001: the lab's own Grafana has 3000. Start with "0. Health Check" and "2. Database Overview": 22 dashboards in all, data after 2 to 3 minutes.
 - **pgwatch's web UI:** http://localhost:8080, user `admin`, password in `ansible/credentials/pgwatch_demo_web_password`. It lists the monitored databases and their metrics, and shows pgwatch's log.
 - **Only through the tunnel:** both listen on the PMM server's localhost, so nothing new is open to the internet.
 - **What it monitors:** every database of `postgresql-source`, found by pgwatch itself (its "continuous discovery"), also ones created later. Each shows in the dashboards' database list as `postgresql-source_<database>`, for example `postgresql-source_shop`. pgwatch connects as the user `pgwatch` (`pg_monitor`, statistics only) and collects its "exhaustive" set of metrics plus the checks of the "Recommendations" dashboard.
@@ -300,3 +315,16 @@ terraform destroy
 ```
 
 This also removes the SSH config and the inventory. The passwords stay in `ansible/credentials/` and are reused on the next deploy.
+
+## Tested
+
+The deploy of 9 November 2026, from scratch, checked Prometheus and Grafana next to PMM (Grafana 13.3.0):
+- **Prometheus** scrapes itself, Grafana, labapp's probe and workload, and node_exporter on `postgresql-source`, found through the EC2 API. Every target is up.
+- **Lab: Application** is in Grafana's folder "Lab", and every panel's query returns data.
+- **PMM's folder "Lab"** has only **PostgreSQL lock blocking**, and labapp's services are no longer in PMM.
+- **The probe:**
+  - 8 seconds of `default_transaction_read_only` were measured as an 8.033 s write outage (`ReadOnlySqlTransaction`), while reads went on.
+  - A PostgreSQL restart was measured as 1.350 s (`AdminShutdown`).
+  - Both are on the dashboard as red time ranges with their error. Batch jobs are marked too.
+- **The pgwatch demo** runs next to the lab's Grafana: its Grafana is on 3001, the lab's on 3000.
+- **Running the playbook again** changes nothing.

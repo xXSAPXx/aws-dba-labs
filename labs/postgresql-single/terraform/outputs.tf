@@ -19,6 +19,15 @@ output "pmm_url" {
   value = "https://${module.pmm_server.pmm_server_public_ip}"
 }
 
+# Grafana (next to PMM): log in as admin with the password from ../ansible/credentials/grafana_admin_password
+output "grafana_url" {
+  value = "http://${module.pmm_server.pmm_server_public_ip}:3000"
+}
+
+output "prometheus_url" {
+  value = "http://${module.pmm_server.pmm_server_public_ip}:9090"
+}
+
 # Backups: what pgBackRest needs to reach its repository (repo1-s3-bucket, repo1-s3-region; the server's role
 # gives the credentials: repo1-s3-key-type=auto)
 output "backup_bucket" {

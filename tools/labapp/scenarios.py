@@ -4,7 +4,7 @@ A scenario plays a person or a tool doing something that goes wrong in productio
 a migration started at the wrong moment, a privilege revoked, a replication slot left behind, a table
 dropped by mistake. It runs inside the labapp-workload
 service, as the database user that person or tool would use, ends by itself after its time limit, and is
-marked on the PMM dashboards.
+marked on the lab's Grafana dashboards.
 
     labapp scenario list | run NAME [--seconds N] [--confirm TABLE] | status | stop [NAME]
 

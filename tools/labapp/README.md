@@ -7,7 +7,7 @@ It is installed and started by the Ansible role [`labapp`](../../ansible/roles/l
 - **`labapp-probe`** checks every database continuously and measures downtime and latency.
 - **`labapp-workload`** is the shop's traffic: users browsing and buying, long-running reports and batch jobs, against the [shop database](../../schema/shop/README.md).
 
-Both report to one PMM dashboard, **Lab → Lab: Application**.
+Both report to one dashboard in the lab's Grafana, **Lab → Lab: Application**. The lab's Prometheus scrapes their metrics.
 
 ## The probe
 
@@ -24,7 +24,7 @@ For each outage, the probe:
 
 - writes a line to `/var/log/labapp/outages.jsonl`;
 - logs its start and end to the journal (`journalctl -u labapp-probe`);
-- adds an annotation (a red time range) in PMM, on the **Lab: Application** dashboard and on PMM's own dashboards of that service.
+- adds an annotation (a red time range) in the lab's Grafana, on the **Lab: Application** dashboard.
 
 The probe's own table, `labapp_probe` in the `labapp` database, holds one heartbeat row per probe and target.
 
@@ -154,7 +154,7 @@ labapp scenario stop                          # end them now (or: stop NAME)
   FROM pg_replication_slots;
   ```
   PMM collects the same number as `pg_replication_slots_pg_wal_lsn_diff` (bytes held, per slot) and `pg_replication_slots_active`. When it ends, the scenario says how much WAL the slot held: about 50 MB after 4 minutes. More writes make it grow faster. Left alone on a real server, a slot like this fills the disk. The setting that prevents it is `max_slot_wal_keep_size`: it gives up the slot instead of the server.
-- **On the dashboards:** a scenario shows on the "Running" timeline of **Lab: Application** and as a purple annotation. Who it blocks is on **PostgreSQL lock blocking**.
+- **On the dashboards:** a scenario shows on the "Running" timeline of **Lab: Application** (Grafana) and as a purple annotation. Who it blocks is on **PostgreSQL lock blocking** (PMM).
 
 A scenario needs traffic to hurt: with the workload paused, nobody waits behind it.
 
@@ -203,7 +203,7 @@ Example of `labapp outages` after `systemctl restart postgresql-17` and a 10-sec
 
 ## The dashboard
 
-**Lab → Lab: Application** in PMM, in four rows:
+**Lab → Lab: Application** in the lab's Grafana (`http://<pmm public IP>:3000`), from [`labapp-dashboard.json`](../../ansible/roles/labapp/files/labapp-dashboard.json), in four rows:
 
 | Row | Shows |
 |---|---|
@@ -212,7 +212,7 @@ Example of `labapp outages` after `systemctl restart postgresql-17` and a 10-sec
 | **Shop workload** | Checkout p95, queued requests, transactions per second by type against the target rate, response time by type, errors by kind and by transaction |
 | **Reports and batch jobs** | When each report and batch job ran, and how long the last run took |
 
-Outages (red) and workload events (purple) are marked on every chart. A link at the top opens **PostgreSQL lock blocking**, the lab's second dashboard: who blocks whom in the database (see the [lab README](../../labs/postgresql-single/README.md#locks-who-blocks-whom)).
+Outages (red) and workload events (purple) are marked on every chart. The lab's second dashboard, **PostgreSQL lock blocking**, is in PMM: who blocks whom in the database, from PMM's own custom queries (see the [lab README](../../labs/postgresql-single/README.md#locks-who-blocks-whom)).
 
 ## Configuration
 

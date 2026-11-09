@@ -22,10 +22,8 @@ labapp_probe_timeout: 2.0
 #     dsn: "host=postgresql-source dbname=labapp user=labapp password=..."
 labapp_targets: []
 
-# The probe listens on this port; PMM (in its container) collects it over the host's private IP.
+# The probe listens on this port; Prometheus (in its container) scrapes it over the host's private IP.
 labapp_metrics_port: 9300
-labapp_metrics_host: "{{ private_ip }}"
-
 ##################################################################
 # Workload: the shop's traffic (labapp-workload)
 ##################################################################
@@ -36,7 +34,7 @@ labapp_workload_rate: 100 # base requests per second (live: labapp load rate N)
 # application (tx checkout), to compare the two side by side (live: labapp load checkout-in-db N).
 labapp_workload_checkout_in_database: 50
 labapp_workload_workers: 24 # connections as shop_app
-labapp_workload_metrics_port: 9302
+labapp_workload_metrics_port: 9302 # Prometheus scrapes it over the host's private IP
 labapp_workload_control_port: 9301 # 127.0.0.1 only, used by `labapp load`
 
 # One connection string per role, set by the lab (group_vars): app, reporting, analytics, batch.
@@ -68,12 +66,16 @@ labapp_workload_scenarios:
   dropped_table: { seconds: 600, retry_seconds: 20 }
 
 ##################################################################
-# PMM server on this host
+# Grafana and PMM on this host
 ##################################################################
 
-# API for the metrics registration, Grafana for annotations and the dashboards.
+# Grafana (role: prometheus_grafana), for the annotations: outages, flash sales, batch jobs, scenarios.
+labapp_grafana_url: http://127.0.0.1:3000
+labapp_grafana_user: admin
+labapp_grafana_password: "" # set by the lab, required
+
+# PMM, for the dashboards that stay there (labapp_dashboards: PostgreSQL lock blocking).
 labapp_pmm_url: https://127.0.0.1
-labapp_pmm_container: pmm-server
 labapp_pmm_user: admin
 labapp_pmm_password: "" # set by the lab, required
 labapp_dashboard_folder_uid: lab

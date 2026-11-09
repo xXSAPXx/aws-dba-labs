@@ -1,27 +1,6 @@
 ---
-- name: List the services PMM monitors
-  ansible.builtin.uri:
-    url: "{{ labapp_pmm_url }}/v1/inventory/services"
-    user: "{{ labapp_pmm_user }}"
-    password: "{{ labapp_pmm_password }}"
-    force_basic_auth: true
-    validate_certs: false
-  register: labapp_pmm_services
-
-# pmm-admin inside the PMM container; PMM then collects the metrics itself.
-- name: Let PMM collect the labapp metrics
-  ansible.builtin.command: >-
-    docker exec {{ labapp_pmm_container }} pmm-admin add external-serverless
-    --server-url=https://{{ labapp_pmm_user }}:{{ labapp_pmm_password }}@127.0.0.1:8443/
-    --server-insecure-tls
-    --url=http://{{ labapp_metrics_host }}:{{ item.port }}/metrics
-    --external-name={{ item.name }}
-  loop: "{{ labapp_pmm_exporters }}"
-  loop_control:
-    label: "{{ item.name }}"
-  when: "item.name not in (labapp_pmm_services.json | string)"
-  changed_when: true
-  no_log: true
+# The dashboards of PMM's own metrics (labapp_dashboards). labapp's metrics and Lab: Application are in the lab's
+# Prometheus and Grafana.
 
 - name: Create the Lab folder in PMM
   ansible.builtin.uri:

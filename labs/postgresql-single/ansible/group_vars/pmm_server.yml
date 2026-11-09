@@ -45,7 +45,22 @@ liquibase_projects:
 labapp_targets:
   - name: "{{ groups['postgresql'][0] }}"
     dsn: "host={{ groups['postgresql'][0] }} port=5432 dbname=labapp user=labapp password={{ postgresql_labapp_password }}"
+# Annotations (outages, flash sales, batch jobs, scenarios) go to the lab's Grafana; PMM keeps the lock blocking dashboard.
+labapp_grafana_password: "{{ grafana_admin_password }}"
 labapp_pmm_password: "{{ pmm_admin_password }}"
+
+# Prometheus and Grafana next to PMM: Prometheus finds this lab's servers by their Lab tag.
+prometheus_grafana_ec2_lab: postgresql-single
+prometheus_grafana_admin_password: "{{ grafana_admin_password }}"
+# node_exporter runs on the PostgreSQL server (site.yml), not on this one.
+prometheus_grafana_node_exporter: true
+prometheus_grafana_node_exporter_skip: "{{ groups['pmm_server'] }}" # the inventory names are the EC2 Name tags
+# labapp on this server: its metrics (the labapp role's ports) and its dashboard, Lab: Application.
+prometheus_grafana_static_jobs:
+  - { name: labapp-probe, targets: ["{{ private_ip }}:9300"] }
+  - { name: labapp-workload, targets: ["{{ private_ip }}:9302"] }
+prometheus_grafana_dashboards:
+  - "{{ playbook_dir }}/../../../ansible/roles/labapp/files/labapp-dashboard.json"
 
 # labapp workload: the shop's traffic, one connection string per role (rates and schedules: the labapp role defaults).
 labapp_workload_dsn:

@@ -18,8 +18,8 @@ The probe checks every target from the application's side:
 
 An outage starts at the first failed write check and ends when a write check succeeds again, so
 durations are accurate to about one `interval` (longer if the server stops answering at all, up to `timeout`).
-Metrics are served in Prometheus format for PMM, outages are appended to a JSON-lines log, and each outage
-is marked as an annotation on the PMM (Grafana) dashboards.
+Metrics are served in Prometheus format for the lab's Prometheus, outages are appended to a JSON-lines log, and
+each outage is marked as an annotation on the lab's Grafana dashboards.
 
 Probe config (JSON):
   {
@@ -27,7 +27,7 @@ Probe config (JSON):
     "metrics_address": "0.0.0.0", "metrics_port": 9300,
     "outage_log": "/var/log/labapp/outages.jsonl",
     "targets": [{"name": "postgresql-source", "dsn": "host=... dbname=... user=... password=..."}],
-    "grafana": {"url": "https://127.0.0.1/graph", "user": "admin", "password": "...", "verify_tls": false}
+    "grafana": {"url": "http://127.0.0.1:3000", "user": "admin", "password": "..."}
   }
 """
 
@@ -64,7 +64,7 @@ RETURNING seq"""
 
 
 class ProbeMetrics:
-    """Prometheus metrics of the probe, scraped by PMM."""
+    """Prometheus metrics of the probe, scraped by the lab's Prometheus."""
 
     def __init__(self):
         from prometheus_client import Counter, Gauge, Histogram
@@ -166,7 +166,7 @@ class Target:
             self._track_outage(ok, when, error)
 
     def _track_outage(self, ok, when, error):
-        # Tagged with the target too: PMM's dashboards show annotations tagged with their service name.
+        # Tagged with the target too, so a dashboard can show one target's outages.
         tags = ["labapp", "outage", self.name]
         with self.lock:
             if not ok:
