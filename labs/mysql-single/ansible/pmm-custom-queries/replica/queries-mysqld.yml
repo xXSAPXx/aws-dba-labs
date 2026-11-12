@@ -1,0 +1,53 @@
+# PMM custom query of the replicas, as it runs in production (2026-11): installed by the pmm_client role to
+#   /usr/local/percona/pmm/collectors/custom-queries/mysql/medium-resolution/queries-mysqld.yml
+# Only the names are the lab's: the database sportsbook_updated is sportsbook, the user orbit-cube is sb_reporting.
+
+# Metric For Slow Query Details:
+mysql_processlist_status_custom_metric:
+  query: "SELECT
+    CAST(ID AS CHAR) AS ID,
+    USER,
+    HOST,
+    DB,
+    STATE,
+    TIME,
+    LEFT(INFO, 120) AS INFO
+FROM performance_schema.processlist
+WHERE DB = 'sportsbook'
+  AND COMMAND != 'Sleep'
+  AND (
+        (
+            INFO REGEXP 'SELECT'
+            AND TIME > 180
+            AND USER != 'sb_reporting'
+        )
+
+        OR (
+            INFO REGEXP 'SELECT'
+            AND TIME > 1000
+            AND USER = 'sb_reporting'
+        )
+      );"
+
+  metrics:
+    - ID:
+        usage: "LABEL"
+        description: "Processlist ID"
+    - USER:
+        usage: "LABEL"
+        description: "User Executing The Query"
+    - HOST:
+        usage: "LABEL"
+        description: "Client Host"
+    - DB:
+        usage: "LABEL"
+        description: "Database Name"
+    - STATE:
+        usage: "LABEL"
+        description: "Process State Info"
+    - TIME:
+        usage: "GAUGE"
+        description: "Execution Time (seconds)"
+    - INFO:
+        usage: "LABEL"
+        description: "Truncated Query Text (120 chars)"

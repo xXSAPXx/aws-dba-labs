@@ -61,10 +61,10 @@ A variable that one play's role defines by default is not known in another play.
 | `common` | `ansible/roles/` | Hostname, `/etc/hosts` entries for every lab server, EPEL, admin tools; turns off the Cockpit web console the Rocky images come with (port 9090) |
 | `data_volume` | `ansible/roles/` | Formats and mounts the database server's EBS volumes: the data volume, and extra ones such as a backup disk (before the database is installed) |
 | `percona_release` | `ansible/roles/` | Installs `percona-release`, which manages the Percona repositories |
-| `pmm_server` | `ansible/roles/` | Docker, the PMM 3 container, the PMM admin password |
+| `pmm_server` | `ansible/roles/` | Docker, the PMM 3 container, the PMM admin password, and the lab's dashboards for PMM (`pmm_server_dashboards`, uploaded whenever PMM's copy differs) |
 | `prometheus_grafana` | `ansible/roles/` | Prometheus and Grafana in Docker Compose next to PMM: Prometheus finds the lab's servers by their tags (EC2 service discovery) and scrapes their node_exporter, Grafana has it as its data source |
 | `node_exporter` | `ansible/roles/` | node_exporter from EPEL on the database server, with its textfile collector in `/var/lib/node_exporter/textfile_collector`, where the backup scripts write their metrics |
-| `pmm_client` | `ansible/roles/` | PMM client, registers the server with PMM, adds the databases to monitor; for PostgreSQL, [custom queries and a dashboard](roles/pmm_client/README.md) that record who blocks whom |
+| `pmm_client` | `ansible/roles/` | PMM client, registers the server with PMM, adds the databases to monitor; for PostgreSQL, [custom queries and a dashboard](roles/pmm_client/README.md) that record who blocks whom; any custom query files of the lab, as they are (`pmm_client_custom_query_files`) |
 | `postgresql_tools` | `ansible/roles/` | Tools on the database server. Live: pg_activity (overview of sessions, waits, blocking) and pg_top (per-PID query, EXPLAIN, locks). From the server log: pgBadger (report of slow statements, lock waits, errors) |
 | `postgresql_client` | `ansible/roles/` | psql and pgbench on the load generator, database passwords in `~/.pgpass` |
 | `liquibase` | `ansible/roles/` | Java, Liquibase and the lab's JDBC drivers on the PMM server (PostgreSQL by default, MySQL Connector/J in the MySQL lab); copies a changelog from the repo (e.g. `schema/shop`, `schema/sportsbook`) and applies the pending migrations; `liquibase-<db>` wrapper command |

@@ -88,6 +88,21 @@ Next to PMM on `mysql-pmm`, in Docker (one Compose project in `/opt/prometheus-g
 - **Grafana** has Prometheus as its data source, and the dashboard **Lab → Lab: Sportsbook**: the database's availability as the application sees it, and the sportsbook's traffic ([the dashboard](../../tools/sportsbook/README.md#the-dashboard)). The lab's dashboards come from files (`prometheus_grafana_dashboards`); edits in Grafana are kept until the file in the repo changes. The sportsbook marks outages, kick-offs and batch jobs on it.
 - On the server: `docker logs prometheus`, `docker logs grafana`. Changes to the configuration belong in the role (`ansible/roles/prometheus_grafana`): the playbook overwrites them, checks `prometheus.yml` with `promtool` and restarts what changed.
 
+### Slow queries in PMM
+
+The company's real-time view of slow queries, as it runs in production: a PMM custom query and its dashboard. They are kept unchanged here, so that each improvement can be compared with what production runs.
+
+- **The custom query** `mysql_processlist_status_custom_metric` reads `performance_schema.processlist` every 10 s (PMM's medium resolution). It reports each statement in `sportsbook` that has run longer than its limit, with its ID, user, host, state and first 120 characters as labels, and how long it has run as the value (`mysql_processlist_status_custom_metric_TIME`).
+  - On `mysql-source`: SELECT over 60 s, UPDATE and INSERT over 5 s (except `sb_batch`), DELETE over 5 s, ALTER over 10 s.
+  - On the replica: SELECT over 180 s, or over 1000 s for `sb_reporting`.
+  - The files are in `ansible/pmm-custom-queries/`. They are installed as `/usr/local/percona/pmm/collectors/custom-queries/mysql/medium-resolution/queries-mysqld.yml` (`pmm_client_custom_query_files`). Only the database and user names are changed to the sportsbook's. PMM picks up a changed file without a restart.
+- **The dashboard Lab → Slow Queries in Real-Time** in PMM shows whether slow queries are running, how many, and by which user. It lists the slowest statements from Query Analytics, each linked to QAN, and the details of each running one.
+  - The file `ansible/pmm-dashboards/slow_queries_real_time.json` is production's export, unchanged. At the upload, the playbook replaces its two data sources with this PMM's (`pmm_server_dashboards`).
+  - Every run uploads it if PMM's copy is different, so a re-run replaces changes made in PMM. Save them to the file first.
+- **Known problems, as in production:**
+  - With **Service Name** on *All* (the default), the Query Analytics panel fails. Pick a service.
+  - **Slow Queries By User** hides every user except `admin`.
+
 ### Watch MySQL live: Dolphie
 
 [Dolphie](https://github.com/charles-001/dolphie) is a terminal dashboard of the server, refreshed every second: the processlist, open transactions and their locks, InnoDB, replication, and graphs of the server's metrics. PMM shows the history; Dolphie shows this second. On `mysql-source`:
@@ -248,5 +263,17 @@ The deploy of 9 November 2026 checked the availability probe and the dashboard, 
 - **Annotations:** kick-offs, settlement and withdrawals are marked too.
 - **Running the playbook again** changes nothing.
 
+The deploy of 12 November 2026 checked the slow queries in PMM:
+- **The dashboard** is in PMM's folder "Lab", and its data sources are this PMM's Metrics and ClickHouse.
+- **The custom query** on `mysql-source`:
+  - Two SELECTs run as `dba` (`SLEEP(150)` and `SLEEP(270)`) appeared after 60 s, with their ID, user, host, state and text.
+  - The sportsbook's slow UPDATEs and INSERTs during its data load appeared too.
+- **The panels:**
+  - With one service selected, every panel had data. The Query Analytics panel listed the finished `SLEEP(150)`: 150 s on average, over its 120 s limit.
+  - With *All*, the Query Analytics panel failed and *Slow Queries By User* showed nothing (the known problems above).
+- **A changed query file** is picked up without a restart: with the SELECT limit lowered to 5 s on the server, a 40 s SELECT appeared at 24 s.
+- **Running the playbook again** put back the dashboard edited in PMM and the changed query file. The run after it changed nothing.
+
 Not tested yet:
 - **sysbench over TLS** (on demand): its login with MySQL 8.4's default authentication.
+- **The replica's custom query:** it is installed with the replica, but no replica was built in the test of 12 November.

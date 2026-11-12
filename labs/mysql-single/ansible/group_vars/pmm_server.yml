@@ -50,6 +50,13 @@ prometheus_grafana_static_jobs:
 prometheus_grafana_dashboards:
   - "{{ playbook_dir }}/../../../ansible/roles/sportsbook/files/sportsbook-dashboard.json"
 
+# PMM's dashboards (pmm_server role): the company's slow query dashboard for the custom query in pmm-custom-queries,
+# as it is, in the Lab folder. Every run puts the file's version back if PMM's copy differs. The uids are the company PMM's
+# data sources, replaced at the upload with this PMM's Metrics (prometheus) and ClickHouse.
+pmm_server_dashboards:
+  - src: "{{ playbook_dir }}/pmm-dashboards/slow_queries_real_time.json"
+    datasources: { FugqTr57z: prometheus, PDEE91DDB90597936: grafana-clickhouse-datasource }
+
 # sysbench, on demand (sysbench.yml): rate, size and test are the sysbench role's defaults.
 sysbench_mysql_host: "{{ groups['mysql'][0] }}"
 sysbench_mysql_password: "{{ mysql_sbtest_password }}"
