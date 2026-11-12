@@ -85,7 +85,7 @@
             line: 'S3_BUCKET="{{ mysql_backup_s3 }}"'
 
         # aws s3 ls exits 1 for an empty folder. The backup script runs only without a full backup: it writes its own log
-        # (/var/log/mysql_backup.log) and metrics, as from cron.
+        # (/var/log/mysql/mysql_backup.log) and metrics, as from cron.
         - name: List the backups in S3, after a full backup if there is none
           ansible.builtin.shell: |
             set -eo pipefail
@@ -149,7 +149,7 @@
         line: 'S3_BUCKET="{{ hostvars[replica_source]["mysql_backup_s3"] }}"'
 
     # It stops MySQL, empties the datadir, restores and prepares the backups, and starts MySQL closed to clients
-    # (only the local socket, no replication, no events). Its log: /opt/restore_script.log.
+    # (only the local socket, no replication, no events). Its log: /var/log/mysql/mysql_restore.log.
     - name: Restore the source's backups
       ansible.builtin.command:
         argv: "{{ ['/opt/scripts/mysql_restore_v2_aws.sh'] + hostvars[replica_source]['replica_backups'] }}"

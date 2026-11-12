@@ -19,3 +19,8 @@ pmm_client_lock_blocking_min_seconds: 1
 
 # Where the PMM client looks for custom queries: <dir>/<service type>/<resolution>-resolution/*.yml
 pmm_client_custom_queries_dir: /usr/local/percona/pmm/collectors/custom-queries
+
+# Custom query files installed as they are, set by the lab (group_vars), e.g. a company's own queries. Each goes to
+# <pmm_client_custom_queries_dir>/<type>/<resolution>-resolution/<name>. Example:
+#   - { src: "{{ playbook_dir }}/pmm-custom-queries/source/queries-mysqld.yml", type: mysql, resolution: medium, name: queries-mysqld.yml }
+pmm_client_custom_query_files: []

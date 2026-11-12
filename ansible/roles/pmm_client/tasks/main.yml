@@ -60,3 +60,15 @@
     path: "{{ pmm_client_custom_queries_dir }}/postgresql/high-resolution/lab-lock-blocking.yml"
     state: absent
   when: not (pmm_client_lock_blocking_enabled | bool)
+
+# The lab's own custom query files, as they are (pmm_client_custom_query_files).
+- name: Install the lab's custom query files
+  ansible.builtin.copy:
+    src: "{{ item.src }}"
+    dest: "{{ pmm_client_custom_queries_dir }}/{{ item.type }}/{{ item.resolution }}-resolution/{{ item.name }}"
+    owner: pmm-agent
+    group: pmm-agent
+    mode: "0640"
+  loop: "{{ pmm_client_custom_query_files }}"
+  loop_control:
+    label: "{{ item.type }}/{{ item.resolution }}-resolution/{{ item.name }}"

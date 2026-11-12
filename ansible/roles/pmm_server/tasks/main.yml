@@ -97,3 +97,73 @@
   when: pmm_server_login.status == 401
   changed_when: true
   no_log: true
+
+
+##################################################################
+# The lab's dashboards (pmm_server_dashboards):
+##################################################################
+
+- name: Upload the lab's dashboards to PMM
+  when: pmm_server_dashboards | length > 0
+  module_defaults:
+    ansible.builtin.uri:
+      user: admin
+      password: "{{ pmm_admin_password }}"
+      force_basic_auth: true
+      validate_certs: false
+  block:
+    - name: Read PMM's data sources
+      ansible.builtin.uri:
+        url: https://127.0.0.1/graph/api/datasources
+      register: pmm_server_datasources
+
+    - name: Create the dashboards' folder
+      ansible.builtin.uri:
+        url: https://127.0.0.1/graph/api/folders
+        method: POST
+        body_format: json
+        body:
+          uid: "{{ pmm_server_dashboard_folder_uid }}"
+          title: "{{ pmm_server_dashboard_folder_title }}"
+        status_code: [200, 409, 412] # 409 and 412: it exists
+      register: pmm_server_folder
+      changed_when: pmm_server_folder.status == 200
+
+    - name: Read the dashboards' copies in PMM
+      ansible.builtin.uri:
+        url: "https://127.0.0.1/graph/api/dashboards/uid/{{ (lookup('ansible.builtin.file', item.src) | from_json).uid }}"
+        status_code: [200, 404]
+      register: pmm_server_current_dashboards
+      loop: "{{ pmm_server_dashboards }}"
+      loop_control:
+        label: "{{ item.src | basename }}"
+
+    # The file as it is, with this PMM's data source uids: by type, the default data source sorted last so it wins.
+    # id and version are Grafana's own (the id the export had is another Grafana's), so they are left out of the comparison.
+    - name: Upload the dashboards that differ from their files
+      ansible.builtin.uri:
+        url: https://127.0.0.1/graph/api/dashboards/db
+        method: POST
+        body_format: json
+        body:
+          dashboard: "{{ pmm_server_dashboard }}"
+          folderUid: "{{ pmm_server_dashboard_folder_uid }}"
+          overwrite: true
+          message: Uploaded by Ansible
+      vars:
+        pmm_server_datasource_uids: >-
+          {{ pmm_server_datasources.json | sort(attribute='isDefault') | items2dict(key_name='type', value_name='uid') }}
+        pmm_server_dashboard_text: >-
+          {%- set ns = namespace(text=lookup('ansible.builtin.file', item.item.src)) -%}
+          {%- for uid, type in (item.item.datasources | default({})).items() -%}
+          {%- set ns.text = ns.text | replace('"' ~ uid ~ '"', '"' ~ pmm_server_datasource_uids[type] ~ '"') -%}
+          {%- endfor -%}
+          {{ ns.text }}
+        pmm_server_dashboard: "{{ pmm_server_dashboard_text | from_json | combine({'id': none}) }}"
+      loop: "{{ pmm_server_current_dashboards.results }}"
+      loop_control:
+        label: "{{ item.item.src | basename }}"
+      when: >-
+        item.status == 404
+        or item.json.dashboard | combine({'id': none, 'version': none}) != pmm_server_dashboard | combine({'id': none, 'version': none})
+      changed_when: true

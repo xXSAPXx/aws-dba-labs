@@ -18,6 +18,9 @@ pmm_client_services:
     username: pmm
     password: "{{ mysql_pmm_password }}"
     extra_args: --query-source=perfschema
+# Slow query details, the production custom query of the source (pmm-custom-queries/source), every 10 s.
+pmm_client_custom_query_files:
+  - { src: "{{ playbook_dir }}/pmm-custom-queries/source/queries-mysqld.yml", type: mysql, resolution: medium, name: queries-mysqld.yml }
 
 # The PMM server's IP: the only place dba and sbtest may log in from (skip_name_resolve: accounts by IP).
 mysql_pmm_server_ip: "{{ hostvars[groups['pmm_server'][0]]['private_ip'] }}"
