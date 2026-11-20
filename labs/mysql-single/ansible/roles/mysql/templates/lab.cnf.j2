@@ -61,7 +61,8 @@ performance_schema_consumer_events_statements_history_long = ON
 
 #------------------------------------------------------------------------------
 # Audit log: the audit_log_filter component (Ansible installs it) with the filter {{ mysql_audit_log_filter }}:
-# who ran which DDL / DCL, when and from where. No DML, no SELECTs, no logins.
+# who ran which DDL / DCL, when and from where, plus statements refused for a missing privilege.
+# No other DML or SELECTs, no logins.
 #------------------------------------------------------------------------------
 # loose_: as for validate_password above, the first start runs before the component is installed.
 loose_audit_log_filter.format = JSON

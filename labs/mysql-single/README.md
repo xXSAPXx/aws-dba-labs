@@ -127,7 +127,7 @@ The settings are in `/etc/my.cnf.d/lab.cnf`, sized from the server's RAM and com
 | GTIDs | on (`gtid_mode`, `enforce_gtid_consistency`), ready for a replica |
 | Error log | `/var/log/mysqld.log` |
 | Slow log | `/var/lib/mysql/mysql-source-slow.log`, statements over 0.5 s |
-| Audit log | `/var/log/mysql/audit.log` (JSON), Percona's `audit_log_filter` component with the filter `ddl_dcl_only` for every account: DDL, DCL and admin commands (`GRANT`, `ALTER USER`, `FLUSH`, `KILL`...), with who, when and from where. No DML, no SELECTs, no logins. A new file every 100 MB, 1 GB kept |
+| Audit log | `/var/log/mysql/audit.log` (JSON), Percona's `audit_log_filter` component with the filter `ddl_dcl_only` for every account: DDL, DCL and admin commands (`GRANT`, `ALTER USER`, `FLUSH`, `KILL`...), with who, when and from where. Also any statement refused for a missing privilege (errors 1044, 1142, 1143, 1227, 1370), with its error code and, for queries, its text. No other DML or SELECTs, no logins. A new file every 100 MB, 1 GB kept |
 | Buffer pool | about half the RAM (1.6 GB on the t3.medium: the 1 GB of sportsbook data fits) |
 | Temporary tables | `temptable_max_ram` about 1/16 of the RAM (192 MB), instead of 8.4's default of at least 1 GB, which stalled a 2 GB server |
 | Durability | `innodb_flush_log_at_trx_commit = 1` and `sync_binlog = 1` |
@@ -237,6 +237,14 @@ The deploy of 8 November 2026, from scratch, checked the audit log (Percona Serv
 - **The filter `ddl_dcl_only`, assigned to every account:** in a test session, all 11 DDL and DCL statements were logged with the account and its host. INSERT, UPDATE, DELETE and SELECT were not. Passwords in `CREATE USER` and `ALTER USER` show as `<secret>`, never as plain text.
 - **The lab's own setup is in the log:** the playbook's users, roles and grants, and the migrations' tables and grants (`sb_migrator` from the PMM server).
 - **Running the playbook again** changes nothing, and the filter keeps its first revision.
+
+The deploy of 20 November 2026 checked the denied statements (Percona Server 8.4.11-12), with a test account that may read one column of one table:
+- **Logged, with the account, its IP and the error code:**
+  - `SELECT`, `UPDATE`, `INSERT`, `DELETE`, `DROP TABLE`, `SET GLOBAL`, `CALL` and `PREPARE`, over TCP and over the socket, each with its text;
+  - a denied `USE` (the client sends it as its own command, Init DB) and denied server-side prepared statements (mysql-connector-python's Prepare command), without a text: the component doesn't write one for those commands.
+- **Passwords:** denied `CREATE USER`, `ALTER USER` and `SET PASSWORD` show `<secret>`. The test passwords are nowhere in the log.
+- **Not logged:** the account's allowed `SELECT`, also as a prepared statement; a syntax error, a duplicate key and a missing table; root's DML; and the sportsbook's 78,385 statements in 60 seconds.
+- **Updating the filter:** a rerun on a lab with the old filter changed only the filter. The next rerun changed nothing.
 
 A second deploy on 8 November 2026 checked the replica:
 - **Without a replica,** a deploy is unchanged: the playbook took 766 s (763 s before), and the replica's plays ended at once.
