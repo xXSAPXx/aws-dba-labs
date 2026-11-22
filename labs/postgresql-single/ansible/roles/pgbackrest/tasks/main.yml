@@ -1,0 +1,46 @@
+---
+# pgBackRest, in the order a DBA sets it up by hand: configuration, stanza, archiving (a restart), check.
+# The package comes with the postgresql role. Backups themselves are not taken or scheduled here.
+
+- name: Write /etc/pgbackrest.conf
+  ansible.builtin.template:
+    src: pgbackrest.conf.j2
+    dest: /etc/pgbackrest.conf
+    owner: root
+    group: postgres
+    mode: "0640" # postgres reads it, only root changes it
+
+# The stanza: the repository's control files (archive.info, backup.info) with this cluster's version and system
+# identifier, so the repository accepts WAL and backups only from this cluster. Created once: a new lab's
+# bucket is empty, and info answers code 1, "missing stanza path".
+- name: Look up the stanza in the repository
+  ansible.builtin.command: pgbackrest --stanza={{ pgbackrest_stanza }} --output=json info
+  register: pgbackrest_info
+  changed_when: false
+  become: true
+  become_user: postgres
+
+- name: Create the stanza
+  ansible.builtin.command: pgbackrest --stanza={{ pgbackrest_stanza }} stanza-create
+  when: (pgbackrest_info.stdout | from_json)[0].status.code == 1
+  become: true
+  become_user: postgres
+
+- name: Turn on WAL archiving
+  ansible.builtin.template:
+    src: 02-pgbackrest.conf.j2
+    dest: "{{ pgbackrest_pg_path }}/conf.d/02-pgbackrest.conf"
+    owner: postgres
+    group: postgres
+    mode: "0600"
+  notify: Restart PostgreSQL
+
+- name: Apply the restart before the check
+  ansible.builtin.meta: flush_handlers
+
+# Forces a WAL switch and waits until that segment is in the bucket: every run proves PostgreSQL → pgBackRest → S3.
+- name: Check that WAL reaches the repository
+  ansible.builtin.command: pgbackrest --stanza={{ pgbackrest_stanza }} check
+  changed_when: false
+  become: true
+  become_user: postgres

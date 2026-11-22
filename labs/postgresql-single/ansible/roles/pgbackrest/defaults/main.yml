@@ -1,0 +1,11 @@
+---
+# The stanza: one per cluster, also its folder in the bucket (/pgbackrest/<stanza>; the IAM role allows only /pgbackrest/).
+pgbackrest_stanza: postgresql-single
+pgbackrest_pg_path: /var/lib/pgsql/17/data # the postgresql role's data directory
+
+# The lab's bucket and its region: Terraform writes them into the inventory.
+pgbackrest_s3_bucket: "{{ backup_bucket }}"
+pgbackrest_s3_region: "{{ backup_bucket_region }}"
+
+# Parallel processes for compression and transfer: the server's vCPUs.
+pgbackrest_process_max: "{{ ansible_facts['processor_vcpus'] }}"

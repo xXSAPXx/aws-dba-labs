@@ -1,0 +1,12 @@
+# Managed by Ansible (role: pgbackrest). Re-running the playbook overwrites manual changes.
+# ALTER SYSTEM (postgresql.auto.conf) still overrides these settings.
+# Written only once the stanza exists: without it every archive_command fails and the WAL piles up in pg_wal.
+
+#------------------------------------------------------------------------------
+# WAL archiving to the S3 bucket, through pgBackRest (/etc/pgbackrest.conf)
+#------------------------------------------------------------------------------
+archive_mode = on                       # changing it restarts PostgreSQL
+# Run for every full WAL segment (%p: its path). With archive-async it hands the segment over and returns at once.
+archive_command = 'pgbackrest --stanza={{ pgbackrest_stanza }} archive-push %p'
+# Close and archive the current segment after 60 s with writes: at most about a minute of WAL is not yet in S3.
+archive_timeout = 60s

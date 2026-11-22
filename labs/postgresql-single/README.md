@@ -1,13 +1,13 @@
 # Lab: postgresql-single
 
-A single Percona PostgreSQL 17 server in a private subnet, monitored by PMM 3, with Prometheus and Grafana next to it for the lab's own dashboards. Use it to practise configuration, query analysis with pg_stat_monitor and PMM, and the basics before the HA labs. pgBackRest and pg_repack are installed.
+A single Percona PostgreSQL 17 server in a private subnet, monitored by PMM 3, with Prometheus and Grafana next to it for the lab's own dashboards. Use it to practise configuration, query analysis with pg_stat_monitor and PMM, and the basics before the HA labs. pgBackRest archives the WAL to an S3 bucket, ready for backups; pg_repack is installed.
 
 ## What it deploys
 
 - **VPC** `10.0.0.0/24`: one public subnet, two private subnets in two availability zones, and a NAT gateway.
 - **postgresql-source**: Percona PostgreSQL 17 with pg_stat_monitor, pgAudit and data checksums, in private subnet 1. Its data lives on a separate encrypted gp3 volume (20 GB by default, mounted at `/var/lib/pgsql`). The configuration is sized from the server's RAM and CPUs (`conf.d/01-lab.conf`, every setting commented), and `pg_hba.conf` lets each user reach only its own database, only from the PMM server.
 - **pmm-server**: PMM 3 (Docker) in the public subnet, with [Prometheus and Grafana](#prometheus-and-grafana) next to it (Docker). Also the SSH jump host and the application side: the labapp probe and shop workload, and the load tools (psql, pgbench). SSH, the PMM UI, Grafana and Prometheus accept connections only from your `admin_cidr`.
-- **Backup bucket** for pgBackRest, destroyed with the lab, and an IAM role for `postgresql-source` to use it: see [Backups: the S3 bucket](#backups-the-s3-bucket).
+- **Backup bucket** for pgBackRest, destroyed with the lab, and an IAM role for `postgresql-source` to use it. The playbook sets up pgBackRest and WAL archiving: see [Backups: pgBackRest and the S3 bucket](#backups-pgbackrest-and-the-s3-bucket).
 
 Both servers run Rocky Linux 10 (the newest official image at deploy time): PostgreSQL on a t3.small, the PMM server on a t3.medium because it also generates the load. Change them with `postgresql_instance_type` and `pmm_instance_type` in `terraform.tfvars`; Rocky Linux 10 needs a current type such as t3 or m7i, not t2.
 
@@ -42,7 +42,7 @@ cd ../ansible
 ansible-playbook site.yml    # about 11 minutes on the first run, 3 after that
 ```
 
-`terraform apply` also writes the SSH config (`~/.ssh/aws-postgresql-lab.conf`) and the Ansible inventory (`ansible/inventory.ini`) with the new IPs. The playbook installs PostgreSQL and PMM, generates the lab passwords into `ansible/credentials/`, registers PostgreSQL in PMM, builds the shop database with Liquibase (the first run also generates its data, about 5 minutes), and starts the application: the labapp probe and the shop workload.
+`terraform apply` also writes the SSH config (`~/.ssh/aws-postgresql-lab.conf`) and the Ansible inventory (`ansible/inventory.ini`) with the new IPs and the backup bucket. The playbook installs PostgreSQL and PMM, sets up pgBackRest with WAL archiving to the bucket, generates the lab passwords into `ansible/credentials/`, registers PostgreSQL in PMM, builds the shop database with Liquibase (the first run also generates its data, about 5 minutes), and starts the application: the labapp probe and the shop workload.
 
 The two servers are set up at the same time, and the shop's data is generated while PMM is still being installed: the long steps overlap. If the new NAT gateway is slow to pass traffic, the first run takes a minute or two longer.
 
@@ -264,19 +264,48 @@ The `grep` runs in a root shell because only `postgres` and root can read the lo
 - **A refused statement gets no audit line, but it is still in the log.** When a user lacks the permission (`must be owner`, `permission denied`), PostgreSQL itself logs the error and, on the next line, the full statement with the user, application and client address. That covers every refused command, `TRUNCATE` and `pg_terminate_backend()` included. Find them with `grep -B1 STATEMENT:` or by the error text.
 - **A failed `CREATE ROLE ... PASSWORD` puts the password in the log.** pgAudit hides passwords in its own lines, but the error line above carries the statement as it was typed. Set passwords with `\password` in psql, which sends only the hash.
 
-## Backups: the S3 bucket
+## Backups: pgBackRest and the S3 bucket
 
-Terraform creates an S3 bucket for pgBackRest and gives `postgresql-source` an IAM role to use it. Setting up pgBackRest is yours to do: the role is all the server needs, with no keys on it. The values for its configuration come from `terraform output`:
+Terraform creates an S3 bucket for pgBackRest and gives `postgresql-source` an IAM role to use it, with no keys on the server. The playbook (role `pgbackrest`) sets pgBackRest up in the order you would by hand:
 
-| pgBackRest setting | Value |
+1. **`/etc/pgbackrest.conf`**, every setting commented.
+2. **The stanza** `postgresql-single`: the repository's control files in the bucket, below `/pgbackrest/postgresql-single`. They hold the cluster's version and system identifier, so the repository accepts WAL and backups only from this cluster. Created once, on a new lab.
+3. **WAL archiving** in `conf.d/02-pgbackrest.conf`: `archive_mode`, `archive_command` (pgBackRest's `archive-push`) and `archive_timeout = 60s`, then a restart. It is written only after the stanza exists: an `archive_command` that keeps failing makes `pg_wal` grow until the disk is full.
+4. **`pgbackrest check`** on every run: it forces a WAL switch and waits until the segment is in the bucket. If it isn't, the playbook fails there.
+
+No backup is taken or scheduled. Take them by hand, always as `postgres`:
+
+```bash
+ssh postgresql-source
+sudo -iu postgres
+pgbackrest --stanza=postgresql-single --type=full backup    # the shop's 1.7 GB: about 25 s, 350 MB in the bucket
+pgbackrest --stanza=postgresql-single --type=incr backup    # about 20 s, 30-35 MB
+pgbackrest info
+```
+
+The settings, and why:
+
+| Setting | Value |
 |---|---|
-| `repo1-type` | `s3` |
-| `repo1-s3-bucket` | `terraform output backup_bucket` (`aws-dba-labs-postgresql-single-<account id>`) |
-| `repo1-s3-region` | `us-east-1` |
-| `repo1-s3-endpoint` | `s3.us-east-1.amazonaws.com` |
+| `repo1-type`, `repo1-s3-bucket`, `repo1-s3-region`, `repo1-s3-endpoint` | `s3`, the bucket and region from Terraform (`terraform output backup_bucket`) |
 | `repo1-s3-key-type` | `auto`: the credentials come from the server's IAM role |
-| `repo1-path` | a folder below `/pgbackrest`, one per cluster, e.g. `/pgbackrest/postgresql-single` |
+| `repo1-path` | `/pgbackrest/postgresql-single`: one folder per cluster; the role allows only `/pgbackrest/` |
 | `repo1-retention-full-type`, `repo1-retention-full` | `time` and `7`: any moment of the last 7 days stays restorable |
+| `repo1-bundle`, `repo1-block` | `y`: small files bundled (fewer S3 requests); incremental backups store only the changed blocks of a file |
+| `process-max` | the server's vCPUs |
+| `compress-type` | `zst` |
+| `start-fast` | `y`: a backup starts with an immediate checkpoint instead of waiting for the next one |
+| `archive-async`, `spool-path` | `y`: `archive_command` returns at once, a background process uploads several segments in parallel |
+| `archive-push-queue-max` | `4GB`: if more WAL than that waits for the bucket, pgBackRest drops it so `pg_wal` can't fill the disk. PostgreSQL stays up, but point-in-time recovery across the gap is lost until the next backup |
+| `delta` | `y` for `restore` only (`[global:restore]`): a restore into the existing data directory rewrites only the files that differ. A backup picks the changed files by size and timestamp; checksumming every file would read the whole database each time. pgBackRest turns delta on by itself, with a warning, when a timestamp looks wrong or after a timeline switch (a restore). |
+| `log-level-file`, `log-level-console` | `detail` in `/var/log/pgbackrest/`, `info` on screen |
+
+Good to know:
+
+- **`ALTER SYSTEM` overrides the files in `conf.d/`.** An `archive_mode` set by hand in `postgresql.auto.conf` wins over `02-pgbackrest.conf`.
+- **In `/etc/pgbackrest.conf`, a comment goes on its own line.** pgBackRest reads `process-max=2 # comment` as the value `2 # comment`.
+- **A restore puts back everything in the data directory, the server log in `log/` and the settings in `conf.d/` included.** Copy `log/` somewhere else first; afterwards, `ansible-playbook site.yml` writes the current settings again (a restart).
+- **WAL summaries are on** (`summarize_wal`, in `01-lab.conf`): PostgreSQL 17 records which blocks changed, so `pg_basebackup --incremental` reads only those. pgBackRest doesn't use them.
 
 How the bucket is set up, and why:
 
@@ -328,3 +357,13 @@ The deploy of 9 November 2026, from scratch, checked Prometheus and Grafana next
   - Both are on the dashboard as red time ranges with their error. Batch jobs are marked too.
 - **The pgwatch demo** runs next to the lab's Grafana: its Grafana is on 3001, the lab's on 3000.
 - **Running the playbook again** changes nothing.
+
+The deploys of 22 November 2026 checked pgBackRest (2.60.0, Percona's package), first set up by hand, then by the playbook:
+- **From scratch** (Terraform 170 s, playbook 890 s): the role created the stanza in the empty bucket, turned archiving on and `check` passed. The shop's data generation produced 257 WAL segments (about 4 GB); all reached the bucket, with no failed attempt.
+- **Over a lab set up by hand,** after `ALTER SYSTEM RESET ALL`: the stanza was found and left alone, and the archive settings moved to `02-pgbackrest.conf`.
+- **Running the playbook again** changes nothing.
+- **Backups:** a full backup took 24 to 26 s (1.7 GB, 346 MB in the bucket), an incremental 17 to 19 s (32 to 35 MB). With `delta=y` for backups, the incremental still checksummed all 1,851 files, 1,757 of them unchanged, which is why delta is now for restores only.
+- **A restore into the running data directory** (`--delta`, the full backup plus one incremental, `--type=immediate`):
+  - With PostgreSQL still running, pgBackRest refuses: `unable to restore while PostgreSQL is running`.
+  - With PostgreSQL stopped: 21 s, then 3 WAL segments from the bucket and 0.14 s of redo. PostgreSQL opened on timeline 2, and the shop's orders ended at the moment the incremental backup did.
+  - The restore also put back the backup's `conf.d/01-lab.conf` and `log/`. A playbook run wrote the current settings again.

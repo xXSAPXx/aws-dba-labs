@@ -1,0 +1,52 @@
+# Managed by Ansible (role: pgbackrest). Re-running the playbook overwrites manual changes.
+# Comments go on their own line: pgBackRest reads "process-max=2 # comment" as the value "2 # comment".
+
+[global]
+# Where the repository lives: S3, not a local disk.
+repo1-type=s3
+# The lab's bucket, from Terraform (terraform output backup_bucket).
+repo1-s3-bucket={{ pgbackrest_s3_bucket }}
+# The bucket's region, used to sign the requests.
+repo1-s3-region={{ pgbackrest_s3_region }}
+# S3 endpoint. The VPC's gateway endpoint routes it inside AWS, so backups skip the NAT gateway (charged per GB).
+repo1-s3-endpoint=s3.{{ pgbackrest_s3_region }}.amazonaws.com
+# Credentials come from the server's IAM role (instance metadata): no keys in this file.
+repo1-s3-key-type=auto
+# This cluster's folder in the bucket. The IAM role allows only /pgbackrest/.
+repo1-path=/pgbackrest/{{ pgbackrest_stanza }}
+# Keep full backups by age in days, not by count.
+repo1-retention-full-type=time
+# 7 days: any moment of the last 7 days stays restorable. Older backups and their WAL are expired.
+repo1-retention-full=7
+# Pack small files into bundles: far fewer S3 requests, each costing time and money.
+repo1-bundle=y
+# Block incremental: incr and diff backups store only the changed blocks of a file. Needs repo1-bundle=y.
+repo1-block=y
+# Parallel processes for compression and upload: {{ pgbackrest_process_max }}, the server's vCPUs.
+process-max={{ pgbackrest_process_max }}
+# Zstandard: fast, and compresses better than the default gz.
+compress-type=zst
+# Start a backup with an immediate checkpoint instead of waiting for the next one (up to checkpoint_timeout, 15 min).
+start-fast=y
+# archive_command hands the WAL over and returns at once. A background process uploads several segments in parallel.
+archive-async=y
+# Where the background archiver keeps its status files, and where a restore prefetches WAL.
+spool-path=/var/spool/pgbackrest
+# If more than 4 GB of WAL wait for upload (S3 unreachable), drop them so pg_wal can't fill the disk.
+# PostgreSQL stays up, but point-in-time recovery across the gap is lost until the next backup.
+archive-push-queue-max=4GB
+# The log files in /var/log/pgbackrest get more detail than the default "info", e.g. every file copied.
+log-level-file=detail
+# What pgBackRest prints to the terminal (the default "warn" prints only problems).
+log-level-console=info
+
+[global:restore]
+# Restore into an existing data directory, rewriting only the files whose checksum differs.
+# Only here, not for backups: there it would read and checksum every file. A backup picks the changed files
+# by size and timestamp, and turns delta on by itself, with a warning, when a timestamp looks wrong or after
+# a timeline switch (a restore). For one backup by hand: --delta.
+delta=y
+
+[{{ pgbackrest_stanza }}]
+# The stanza, named after the cluster: its data directory.
+pg1-path={{ pgbackrest_pg_path }}
