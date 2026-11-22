@@ -13,7 +13,7 @@ A replica is there on demand, only for the tests that need one: see [A replica, 
   
   Also installed: Percona XtraBackup 8.4, MySQL Shell, Percona Toolkit, the AWS CLI, Dolphie to watch MySQL live, and node_exporter for Prometheus.
 - **mysql-pmm**: PMM 3 (Docker) in the public subnet, also the SSH jump host and the application side: the [sportsbook application](../../tools/sportsbook/README.md), Liquibase with the [sportsbook database's migrations](../../schema/sportsbook/README.md), and the MySQL client. Next to PMM, [Prometheus and Grafana](#prometheus-and-grafana) in Docker. SSH and the UIs accept connections only from your `admin_cidr`.
-- **Backup bucket** and an IAM role for `mysql-source`: it may read, write and delete in `s3://<bucket>/mysql/` and nowhere else, only from the VPC. The bucket is destroyed with the lab. The bucket's settings are the same as in [postgresql-single](../postgresql-single/README.md#backups-the-s3-bucket).
+- **Backup bucket** and an IAM role for `mysql-source`: it may read, write and delete in `s3://<bucket>/mysql/` and nowhere else, only from the VPC. The bucket is destroyed with the lab. The bucket's settings are the same as in [postgresql-single](../postgresql-single/README.md#backups-pgbackrest-and-the-s3-bucket).
 
 Both servers run Rocky Linux 10. Change the types with `mysql_instance_type` and `pmm_instance_type` in `terraform.tfvars`, and the disks with `mysql_data_volume_size` and `mysql_backup_volume_size`.
 

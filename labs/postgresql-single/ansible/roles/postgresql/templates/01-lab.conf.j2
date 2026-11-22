@@ -41,7 +41,10 @@ max_wal_size = 2GB                      # so checkpoints are driven by time, not
 min_wal_size = 512MB
 checkpoint_timeout = 15min
 checkpoint_completion_target = 0.9      # spread checkpoint writes over 90% of the interval
-# archive_mode stays off until pgBackRest is set up: an archive_command that never succeeds fills pg_wal.
+# WAL archiving is in conf.d/02-pgbackrest.conf (role pgbackrest), written only once the stanza exists.
+# WAL summaries (PostgreSQL 17+): a background process records which blocks changed, so
+# pg_basebackup --incremental reads only those. Kept for wal_summary_keep_time (10 days). pgBackRest doesn't use them.
+summarize_wal = on
 
 #------------------------------------------------------------------------------
 # Replication (ready for replicas)

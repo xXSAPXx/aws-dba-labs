@@ -2,7 +2,7 @@
 ####################################################################################################
 # Files written on your machine on every apply (and removed on destroy):
 #   ~/.ssh/aws-postgresql-lab.conf   SSH config: ssh pmm-server / ssh postgresql-source (via the PMM server)
-#   ../ansible/inventory.ini         Ansible inventory: the same host names + private IPs + VPC CIDR
+#   ../ansible/inventory.ini         Ansible inventory: the same host names + private IPs + VPC CIDR + backup bucket
 ####################################################################################################
 
 resource "local_file" "ssh_config" {
@@ -27,6 +27,8 @@ resource "local_file" "ansible_inventory" {
     postgresql_data_volume_id = module.postgresql_ec2_instance.data_volume_id
     vpc_cidr_block            = module.vpc.vpc_cidr_block
     ssh_user                  = local.ssh_user
+    backup_bucket             = module.backup_bucket.bucket_name
+    backup_bucket_region      = module.backup_bucket.bucket_region
   })
 }
 

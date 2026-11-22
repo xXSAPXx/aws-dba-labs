@@ -43,6 +43,8 @@
       when: "'postgresql' in group_names"
     - role: postgresql
       when: "'postgresql' in group_names"
+    - role: pgbackrest # the stanza in the S3 bucket, then WAL archiving (a restart), then a check
+      when: "'postgresql' in group_names"
     - role: postgresql_tools
       when: "'postgresql' in group_names"
     - role: node_exporter # for Prometheus; its textfile collector will read the backup scripts' metrics
