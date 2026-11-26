@@ -8,10 +8,10 @@ variable "backup_bucket_arn" {
   type        = string
 }
 
-variable "backup_prefix" {
-  description = "Folder of the bucket the server may use (no slashes), e.g. pgbackrest. pgBackRest keeps one repository per cluster below it."
-  type        = string
-  default     = "pgbackrest"
+variable "backup_prefixes" {
+  description = "Folders of the bucket the server may use (no slashes), e.g. [\"pgbackrest\", \"pg_dump\"]. pgBackRest keeps one repository per cluster below its folder."
+  type        = list(string)
+  default     = ["pgbackrest"]
 }
 
 variable "s3_endpoint_id" {

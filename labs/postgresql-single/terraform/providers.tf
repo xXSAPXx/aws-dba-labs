@@ -1,7 +1,7 @@
 
 # Required Terraform Providers and Versions:
 terraform {
-  required_version = ">= 1.10.0"
+  required_version = ">= 1.11.0" # write-only arguments: the secrets' values stay out of the state (lab_secrets)
 
   required_providers {
     aws = {

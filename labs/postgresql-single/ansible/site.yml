@@ -43,7 +43,9 @@
       when: "'postgresql' in group_names"
     - role: postgresql
       when: "'postgresql' in group_names"
-    - role: pgbackrest # the stanza in the S3 bucket, then WAL archiving (a restart), then a check
+    - role: pgbackrest # the stanza in the S3 bucket (encrypted), then WAL archiving (a restart), then a check
+      when: "'postgresql' in group_names"
+    - role: postgresql_backup_script # the backup script from dba-ops-scripts, its log rotation and cron
       when: "'postgresql' in group_names"
     - role: postgresql_tools
       when: "'postgresql' in group_names"
@@ -85,3 +87,14 @@
     - name: Start the application
       ansible.builtin.import_role:
         name: labapp
+
+# Last, once the shop's data is there: the first full backup, so the cron's incremental backups have one to build on and the
+# lab has a backup to restore from. About a minute on a new lab; nothing when the repository already has a full backup.
+- name: The first full backup
+  hosts: postgresql
+  become: true
+  tasks:
+    - name: Take the first full backup if the repository has none
+      ansible.builtin.import_role:
+        name: postgresql_backup_script
+        tasks_from: first_full.yml

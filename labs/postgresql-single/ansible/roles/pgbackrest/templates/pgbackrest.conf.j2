@@ -14,6 +14,10 @@ repo1-s3-endpoint=s3.{{ pgbackrest_s3_region }}.amazonaws.com
 repo1-s3-key-type=auto
 # This cluster's folder in the bucket. The IAM role allows only /pgbackrest/.
 repo1-path=/pgbackrest/{{ pgbackrest_stanza }}
+# The repository is encrypted (AES-256-CBC) with this passphrase, from Secrets Manager. The backup script encrypts the pg_dump
+# archives with it too. Without it nothing can be restored, and it can't be changed for an existing repository.
+repo1-cipher-type=aes-256-cbc
+repo1-cipher-pass={{ pgbackrest_cipher_pass }}
 # Keep full backups by age in days, not by count.
 repo1-retention-full-type=time
 # 7 days: any moment of the last 7 days stays restorable. Older backups and their WAL are expired.

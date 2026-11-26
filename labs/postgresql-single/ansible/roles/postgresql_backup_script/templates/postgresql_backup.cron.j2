@@ -1,0 +1,6 @@
+# Managed by Ansible (role: postgresql_backup_script). The schedule is postgresql_backup_script_cron, in the server's local time.
+# The script logs itself to /var/log/postgresql_backup.log, so cron's copy of the output goes to /dev/null.
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+{% for entry in postgresql_backup_script_cron %}
+{{ entry.schedule }} root {{ postgresql_backup_script_path }} {{ entry.option }} > /dev/null 2>&1
+{% endfor %}

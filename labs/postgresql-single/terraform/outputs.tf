@@ -39,8 +39,13 @@ output "backup_bucket_region" {
 }
 
 output "backup_folder" {
-  description = "The folder the database server may use; one pgBackRest repository per cluster below it (repo1-path)"
+  description = "pgBackRest's folder; one repository per cluster below it (repo1-path). The pg_dump archives are in pg_dump/."
   value       = "/pgbackrest"
+}
+
+# Secrets Manager: the lab's secrets, readable by the database server (the values are not in the state)
+output "secrets" {
+  value = module.lab_secrets.names
 }
 
 output "postgresql_iam_role" {

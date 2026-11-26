@@ -25,16 +25,16 @@ resource "aws_iam_instance_profile" "server" {
 }
 
 # Backups: list, read, write and delete (the backup tool's retention deletes expired backups, e.g. pgBackRest)
-# in the backup folder only, and only through the VPC's S3 endpoint.
+# in the backup folders only, and only through the VPC's S3 endpoint.
 data "aws_iam_policy_document" "backups" {
   statement {
-    sid       = "ListTheBackupFolder"
+    sid       = "ListTheBackupFolders"
     actions   = ["s3:ListBucket"]
     resources = [var.backup_bucket_arn]
     condition {
       test     = "StringLike"
       variable = "s3:prefix"
-      values   = [var.backup_prefix, "${var.backup_prefix}/*"]
+      values   = flatten([for prefix in var.backup_prefixes : [prefix, "${prefix}/*"]])
     }
     condition {
       test     = "StringEquals"
@@ -46,7 +46,7 @@ data "aws_iam_policy_document" "backups" {
   statement {
     sid       = "ReadWriteDeleteBackups"
     actions   = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject", "s3:AbortMultipartUpload"]
-    resources = ["${var.backup_bucket_arn}/${var.backup_prefix}/*"]
+    resources = [for prefix in var.backup_prefixes : "${var.backup_bucket_arn}/${prefix}/*"]
     condition {
       test     = "StringEquals"
       variable = "aws:SourceVpce"
