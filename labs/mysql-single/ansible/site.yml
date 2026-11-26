@@ -3,6 +3,17 @@
 #   ansible-playbook site.yml
 # Re-running it puts every server back into the known-good state.
 
+# Before anything reads it: PMM's admin password must have upper and lower case, a digit and a symbol (PMM's password policy).
+- name: The PMM admin password, on this machine
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Keep it within PMM's password policy
+      ansible.builtin.import_role:
+        name: pmm_server
+        tasks_from: password
+
 - name: Wait for the servers (right after terraform apply they may still be booting)
   hosts: all
   gather_facts: false
