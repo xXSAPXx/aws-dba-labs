@@ -11,6 +11,8 @@ pmm_server_docker_repo: "https://download.docker.com/linux/{{ 'rhel' if ansible_
 pmm_server_docker_daemon_config: "{{ {'firewall-backend': 'nftables'} if ansible_facts['distribution_major_version'] | int >= 10 else {} }}"
 
 # pmm_admin_password: set by the lab (group_vars), required.
+# The file it is read from, for tasks/password.yml (the lab's first play), which keeps it within PMM's password policy:
+pmm_server_password_file: "{{ playbook_dir }}/credentials/pmm_admin_password"
 
 # Dashboards for PMM's Grafana, set by the lab (group_vars), e.g. a company's own. Every run uploads each file whose copy in
 # PMM differs, so a re-run replaces changes made in PMM. datasources: the uids of the data sources the file was exported
