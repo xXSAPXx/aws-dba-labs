@@ -22,3 +22,7 @@ postgresql_shop_support_password: "{{ lookup('ansible.builtin.password', playboo
 
 # Size of the generated shop data (schema/shop): 1 = about 1.5-2 GB. Used only when the data is first generated.
 shop_scale: 1
+
+# The dba-ops-scripts repository on this machine, next to this one: the postgresql_backup_script role installs its
+# PostgreSQL backup script and log rotation from there.
+dba_ops_scripts_dir: "{{ playbook_dir }}/../../../../dba-ops-scripts"

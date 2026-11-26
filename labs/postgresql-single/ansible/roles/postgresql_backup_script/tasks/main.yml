@@ -1,0 +1,70 @@
+---
+# The backup script as on a production server: in /opt/scripts, with its log rotation and its cron entries.
+
+- name: Look for the backup script in dba-ops-scripts, on this machine
+  ansible.builtin.stat:
+    path: "{{ postgresql_backup_script_src }}/postgresql_backup_v1_aws.sh"
+  delegate_to: localhost
+  become: false
+  register: postgresql_backup_script_source
+
+- name: Stop if dba-ops-scripts is not next to this repository
+  ansible.builtin.assert:
+    that: postgresql_backup_script_source.stat.exists
+    fail_msg: >-
+      {{ postgresql_backup_script_src }}/postgresql_backup_v1_aws.sh not found. Clone dba-ops-scripts next to aws-dba-labs,
+      or set dba_ops_scripts_dir in group_vars/all.yml.
+    quiet: true
+
+# jq reads pgBackRest's repository, gpg encrypts the pg_dump archives, cron runs the script (the AWS CLI comes with the pgbackrest role):
+- name: Install what the script needs
+  ansible.builtin.dnf:
+    name: [jq, gnupg2, cronie]
+    state: present
+
+- name: Start cron
+  ansible.builtin.systemd_service:
+    name: crond
+    state: started
+    enabled: true
+
+- name: Create the scripts folder
+  ansible.builtin.file:
+    path: /opt/scripts
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+
+# The script as it is in dba-ops-scripts, with the lab's folder for the pg_dump archives and its stanza (its other settings,
+# e.g. BACKUP_LOCK_DATABASE=shop, are the lab's already). Written from its content, so a rerun changes nothing unless the
+# script in dba-ops-scripts changed:
+- name: Install the backup script
+  ansible.builtin.copy:
+    content: >-
+      {{ lookup('ansible.builtin.file', postgresql_backup_script_src ~ '/postgresql_backup_v1_aws.sh', rstrip=False)
+         | regex_replace('(?m)^S3_BUCKET=.*$', postgresql_backup_script_s3_line)
+         | regex_replace('(?m)^PGBACKREST_STANZA=.*$', postgresql_backup_script_stanza_line) }}
+    dest: "{{ postgresql_backup_script_path }}"
+    owner: root
+    group: root
+    mode: "0700"
+  vars:
+    postgresql_backup_script_s3_line: 'S3_BUCKET="{{ postgresql_backup_script_s3 }}"'
+    postgresql_backup_script_stanza_line: 'PGBACKREST_STANZA="{{ pgbackrest_stanza }}"'
+
+- name: Install the log rotation of the script's log
+  ansible.builtin.copy:
+    src: "{{ postgresql_backup_script_src }}/postgresql_backup.logrotate.example"
+    dest: /etc/logrotate.d/postgresql_backup
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Schedule the backups (cron)
+  ansible.builtin.template:
+    src: postgresql_backup.cron.j2
+    dest: /etc/cron.d/postgresql_backup
+    owner: root
+    group: root
+    mode: "0644"

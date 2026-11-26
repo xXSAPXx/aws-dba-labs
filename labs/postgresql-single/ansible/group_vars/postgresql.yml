@@ -1,6 +1,12 @@
 ---
-# PostgreSQL data on its own EBS volume (Terraform creates it, the data_volume role mounts it):
+# PostgreSQL data on its own EBS volume, the pg_dump backups on another (Terraform creates both, the data_volume role mounts them):
 data_volume_mount_point: /var/lib/pgsql
+data_volume_extra_volumes:
+  - id: "{{ backup_volume_id }}"
+    mount_point: /backup
+
+# pgBackRest's stanza of this cluster: set up by the pgbackrest role, backed up by the postgresql_backup_script role's script.
+pgbackrest_stanza: postgresql-single
 
 # PMM monitors PostgreSQL through pg_stat_monitor (installed by the postgresql role).
 # The monitoring user is set here, not left to the postgresql role's default, because the PMM registration

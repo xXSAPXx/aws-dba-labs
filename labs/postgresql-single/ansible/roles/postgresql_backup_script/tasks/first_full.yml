@@ -1,0 +1,17 @@
+---
+# The first full backup, at the end of a deploy, once the shop's data is there. Only when pgBackRest's repository has no full
+# backup, so the cron's incremental backups have one to build on, and the lab has a backup to restore from at once.
+# Taken by the script, as from cron: with its log and its metrics.
+- name: Take the first full backup if the repository has none
+  ansible.builtin.shell: |
+    set -o pipefail
+    fulls=$(runuser -u postgres -- pgbackrest --stanza={{ pgbackrest_stanza }} --output=json info | jq '[.[0].backup[]? | select(.type == "full")] | length')
+    if [ "$fulls" = 0 ]; then
+        {{ postgresql_backup_script_path }} --pgbackrest > /dev/null
+        echo "first full backup taken"
+    fi
+  args:
+    executable: /bin/bash
+    chdir: /
+  register: postgresql_backup_script_first_full
+  changed_when: "'first full backup taken' in postgresql_backup_script_first_full.stdout"

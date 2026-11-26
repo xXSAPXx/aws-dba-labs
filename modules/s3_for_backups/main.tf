@@ -2,7 +2,8 @@
 # S3 bucket for database backups (pgBackRest repository), one per lab.
 # The backup tool decides what to keep (e.g. pgBackRest's retention). S3 never deletes current files by age:
 # that would break the backup repository (its control files are written once and stay old, and newer
-# backups reference files of older ones).
+# backups reference files of older ones). Only folders of self-contained files (e.g. pg_dump archives) may
+# get an age limit, folder by folder (expire_after_days).
 ###################################################################################
 
 data "aws_caller_identity" "current" {}
@@ -66,6 +67,22 @@ resource "aws_s3_bucket_lifecycle_configuration" "backups" {
 
     abort_incomplete_multipart_upload {
       days_after_initiation = var.abort_incomplete_upload_days
+    }
+  }
+
+  # Age limit of a folder's files: S3 deletes them N days after their upload (they then stay recoverable as an older
+  # version, see above). Never for a pgBackRest repository's folder.
+  dynamic "rule" {
+    for_each = var.expire_after_days
+    content {
+      id     = "expire-${rule.key}"
+      status = "Enabled"
+      filter {
+        prefix = "${rule.key}/"
+      }
+      expiration {
+        days = rule.value
+      }
     }
   }
 

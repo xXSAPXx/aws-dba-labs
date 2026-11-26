@@ -67,6 +67,18 @@ variable "postgresql_data_volume_size" {
   description = "Size in GB of the PostgreSQL data volume (gp3, mounted at /var/lib/pgsql). Can be grown in place later."
 }
 
+variable "postgresql_backup_volume_size" {
+  type        = number
+  default     = 20
+  description = "Size in GB of the backup volume (gp3, mounted at /backup): the pg_dump backups before they go to S3 (the newest dump folder and 3 days of archives)."
+}
+
+variable "pg_dump_retention_days" {
+  type        = number
+  default     = 7
+  description = "Days the pg_dump archives stay in the bucket (pg_dump/) before S3 deletes them. pgBackRest's own retention is in its configuration."
+}
+
 variable "ssh_private_key_path" {
   type        = string
   default     = null

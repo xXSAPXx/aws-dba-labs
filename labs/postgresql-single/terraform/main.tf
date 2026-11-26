@@ -55,7 +55,7 @@ module "vpc" {
 }
 
 
-# Backups: S3 bucket for pgBackRest, and the database server's IAM role
+# Backups: S3 bucket for pgBackRest and the pg_dump archives, and the database server's IAM role
 # (one bucket per lab, destroyed with it; the server reaches it only through the VPC's S3 endpoint)
 ######################################################################################
 
@@ -65,6 +65,8 @@ module "backup_bucket" {
   source = "../../../modules/s3_for_backups"
 
   bucket_name = "aws-dba-labs-postgresql-single-${data.aws_caller_identity.current.account_id}"
+  # The pg_dump archives are deleted after N days. pgBackRest's folder never gets an age limit: pgBackRest expires its own backups.
+  expire_after_days = { pg_dump = var.pg_dump_retention_days }
 }
 
 module "postgresql_role" {
@@ -72,8 +74,27 @@ module "postgresql_role" {
 
   name              = "postgresql-single-db-server"
   backup_bucket_arn = module.backup_bucket.bucket_arn
-  backup_prefix     = "pgbackrest"
+  backup_prefixes   = ["pgbackrest", "pg_dump"] # pgBackRest's repository, the backup script's pg_dump archives
   s3_endpoint_id    = module.vpc.s3_endpoint_id
+}
+
+
+# Secrets: the passphrase of pgBackRest's repository, readable by the database server (its IAM role). The playbook writes it
+# into /etc/pgbackrest.conf (repo1-cipher-pass); the backup script encrypts the pg_dump archives with it too.
+# A random value made by AWS, never in Terraform's state; deleted with the lab (and so are the backups it encrypts).
+######################################################################################
+module "lab_secrets" {
+  source = "../../../modules/lab_secrets"
+
+  name_prefix       = "postgresql-single"
+  reader_role_names = [module.postgresql_role.role_name]
+
+  secrets = {
+    pgbackrest-cipher-pass = {
+      description = "Passphrase of the pgBackRest repository (repo1-cipher-pass) and of the pg_dump archives (gpg)"
+      length      = 64
+    }
+  }
 }
 
 
@@ -99,10 +120,12 @@ module "postgresql_ec2_instance" {
   # Its IAM role: access to the backup bucket (attached and changed without replacing the server)
   iam_instance_profile = module.postgresql_role.instance_profile_name
 
-  # EBS Volume Settings (root = OS; data = PostgreSQL, mounted at /var/lib/pgsql):
-  volume_size      = 10
-  volume_type      = "gp3"
-  data_volume_size = var.postgresql_data_volume_size
+  # EBS Volume Settings (root = OS; data = PostgreSQL, mounted at /var/lib/pgsql;
+  # backup = the pg_dump backups before they go to S3, mounted at /backup):
+  volume_size        = 10
+  volume_type        = "gp3"
+  data_volume_size   = var.postgresql_data_volume_size
+  backup_volume_size = var.postgresql_backup_volume_size
 }
 
 

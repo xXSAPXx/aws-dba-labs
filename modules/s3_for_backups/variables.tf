@@ -15,6 +15,12 @@ variable "noncurrent_version_days" {
   default     = 7
 }
 
+variable "expire_after_days" {
+  description = "Folders (no slashes) whose files S3 deletes after N days, e.g. { pg_dump = 7 }. Only for self-contained files such as pg_dump archives, never for a pgBackRest repository."
+  type        = map(number)
+  default     = {}
+}
+
 variable "abort_incomplete_upload_days" {
   description = "Days after which S3 aborts multipart uploads that never finished (e.g. an interrupted backup), so their parts stop costing."
   type        = number

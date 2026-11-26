@@ -303,8 +303,8 @@ SCENARIOS = {
         "switches_off": "Nothing. Whoever acts as the owner of a table may drop it. The only protection is a backup.",
         "leaves": (
             "THE TABLE STAYS DROPPED. Neither the time limit nor `labapp scenario stop` brings it back. "
-            "The way back is a restore. The lab has no backups yet: until it does, rebuild the shop database "
-            "(lab README, \"Reset the shop database\", about 8 minutes)."
+            "The way back is a point-in-time restore to the moment before the drop (lab README, \"Backups\"), "
+            "or rebuilding the shop database (\"Reset the shop database\", about 8 minutes, new data)."
         ),
         "seconds": 600,
         "acts_within": ACTS_WITHIN,

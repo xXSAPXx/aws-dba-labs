@@ -1,0 +1,22 @@
+---
+# The PostgreSQL backup script from dba-ops-scripts (dba_ops_scripts_dir in group_vars/all.yml), installed as on a production
+# server: with its log rotation and cron entries. The script finds the rest itself: pgBackRest's configuration and the
+# passphrase in it (the pgbackrest role), node_exporter's textfile folder (the node_exporter role), /backup (data_volume).
+postgresql_backup_script_src: "{{ dba_ops_scripts_dir }}/postgresql_prod_backup_scripts"
+postgresql_backup_script_path: /opt/scripts/postgresql_backup_v1_aws.sh
+
+# The folder of the pg_dump archives in the lab's bucket. The server's role may write there, and S3 deletes the archives
+# after pg_dump_retention_days (Terraform):
+postgresql_backup_script_s3: "s3://{{ backup_bucket }}/pg_dump"
+
+# /etc/cron.d/postgresql_backup: when each backup runs, in the server's local time (UTC on the lab). As in production:
+# full backups on Monday and Friday at 02:00, incremental ones on the other days, pg_dump every day at 04:00.
+# For a lab session of a few hours, set a faster one in group_vars/postgresql.yml, e.g.:
+#   postgresql_backup_script_cron:
+#     - { schedule: "0 */6 * * *", option: --pgbackrest }
+#     - { schedule: "30 * * * *", option: --pgbackrest_incremental }
+#     - { schedule: "45 */2 * * *", option: --pg_dump }
+postgresql_backup_script_cron:
+  - { schedule: "0 2 * * 1,5", option: --pgbackrest }
+  - { schedule: "0 2 * * 0,2,3,4,6", option: --pgbackrest_incremental }
+  - { schedule: "0 4 * * *", option: --pg_dump }

@@ -73,7 +73,7 @@ module "mysql_role" {
 
   name              = "mysql-single-db-server"
   backup_bucket_arn = module.backup_bucket.bucket_arn
-  backup_prefix     = "mysql"
+  backup_prefixes   = ["mysql"]
   s3_endpoint_id    = module.vpc.s3_endpoint_id
 }
 

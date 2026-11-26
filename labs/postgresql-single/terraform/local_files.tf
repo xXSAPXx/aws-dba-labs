@@ -2,7 +2,8 @@
 ####################################################################################################
 # Files written on your machine on every apply (and removed on destroy):
 #   ~/.ssh/aws-postgresql-lab.conf   SSH config: ssh pmm-server / ssh postgresql-source (via the PMM server)
-#   ../ansible/inventory.ini         Ansible inventory: the same host names + private IPs + VPC CIDR + backup bucket
+#   ../ansible/inventory.ini         Ansible inventory: the same host names + private IPs + VPC CIDR + volumes, backup bucket
+#                                    and the name of the repository passphrase's secret
 ####################################################################################################
 
 resource "local_file" "ssh_config" {
@@ -22,13 +23,15 @@ resource "local_file" "ansible_inventory" {
   file_permission      = "0644"
   directory_permission = "0755"
   content = templatefile("${path.module}/ansible_inventory.tpl", {
-    pmm_server_private_ip     = module.pmm_server.pmm_server_private_ip
-    postgresql_internal_ip    = module.postgresql_ec2_instance.private_ip
-    postgresql_data_volume_id = module.postgresql_ec2_instance.data_volume_id
-    vpc_cidr_block            = module.vpc.vpc_cidr_block
-    ssh_user                  = local.ssh_user
-    backup_bucket             = module.backup_bucket.bucket_name
-    backup_bucket_region      = module.backup_bucket.bucket_region
+    pmm_server_private_ip       = module.pmm_server.pmm_server_private_ip
+    postgresql_internal_ip      = module.postgresql_ec2_instance.private_ip
+    postgresql_data_volume_id   = module.postgresql_ec2_instance.data_volume_id
+    postgresql_backup_volume_id = module.postgresql_ec2_instance.backup_volume_id
+    vpc_cidr_block              = module.vpc.vpc_cidr_block
+    ssh_user                    = local.ssh_user
+    backup_bucket               = module.backup_bucket.bucket_name
+    backup_bucket_region        = module.backup_bucket.bucket_region
+    pgbackrest_cipher_secret    = module.lab_secrets.names["pgbackrest-cipher-pass"]
   })
 }
 

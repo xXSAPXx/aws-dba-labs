@@ -5,15 +5,15 @@ A single Percona PostgreSQL 17 server in a private subnet, monitored by PMM 3, w
 ## What it deploys
 
 - **VPC** `10.0.0.0/24`: one public subnet, two private subnets in two availability zones, and a NAT gateway.
-- **postgresql-source**: Percona PostgreSQL 17 with pg_stat_monitor, pgAudit and data checksums, in private subnet 1. Its data lives on a separate encrypted gp3 volume (20 GB by default, mounted at `/var/lib/pgsql`). The configuration is sized from the server's RAM and CPUs (`conf.d/01-lab.conf`, every setting commented), and `pg_hba.conf` lets each user reach only its own database, only from the PMM server.
+- **postgresql-source**: Percona PostgreSQL 17 with pg_stat_monitor, pgAudit and data checksums, in private subnet 1. Its data lives on a separate encrypted gp3 volume (20 GB by default, mounted at `/var/lib/pgsql`), and the logical backups on another (20 GB, `/backup`). The configuration is sized from the server's RAM and CPUs (`conf.d/01-lab.conf`, every setting commented), and `pg_hba.conf` lets each user reach only its own database, only from the PMM server.
 - **pmm-server**: PMM 3 (Docker) in the public subnet, with [Prometheus and Grafana](#prometheus-and-grafana) next to it (Docker). Also the SSH jump host and the application side: the labapp probe and shop workload, and the load tools (psql, pgbench). SSH, the PMM UI, Grafana and Prometheus accept connections only from your `admin_cidr`.
-- **Backup bucket** for pgBackRest, destroyed with the lab, and an IAM role for `postgresql-source` to use it. The playbook sets up pgBackRest and WAL archiving: see [Backups: pgBackRest and the S3 bucket](#backups-pgbackrest-and-the-s3-bucket).
+- **Backup bucket** for pgBackRest and the pg_dump backups, destroyed with the lab, an IAM role for `postgresql-source` to use it, and the repository's passphrase in Secrets Manager. The playbook sets up pgBackRest (encrypted), WAL archiving and the backup script with its cron: see [Backups: pgBackRest and the S3 bucket](#backups-pgbackrest-and-the-s3-bucket).
 
 Both servers run Rocky Linux 10 (the newest official image at deploy time): PostgreSQL on a t3.small, the PMM server on a t3.medium because it also generates the load. Change them with `postgresql_instance_type` and `pmm_instance_type` in `terraform.tfvars`; Rocky Linux 10 needs a current type such as t3 or m7i, not t2.
 
 t3 instances are burstable: each may use 20% of its vCPUs continuously and more in bursts, paid for with CPU credits, and a new one starts with none. The lab runs them in `unlimited` mode, so they are never throttled and CPU above the 20% is billed instead. With `cpu_credits = "standard"` in `terraform.tfvars` the price is fixed, but a server without credits is throttled, which looks like a slow database or a slow application in PMM. For heavy load tests, use a non-burstable type for PostgreSQL such as `m7i.large`.
 
-**Cost:** about $0.12 per hour in us-east-1 while the lab runs (NAT gateway $0.045, t3.medium $0.042, t3.small $0.021, two public IPs $0.010, 50 GB of gp3 disks $0.005). CPU above the t3 baseline adds about a cent per hour with the default workload, and at most $0.16 per hour if both servers run flat out. Backups in the S3 bucket cost $0.023 per GB-month: cents for a lab session. Always run `terraform destroy` when you're done.
+**Cost:** about $0.12 per hour in us-east-1 while the lab runs (NAT gateway $0.045, t3.medium $0.042, t3.small $0.021, two public IPs $0.010, 70 GB of gp3 disks $0.008, the passphrase secret $0.001). CPU above the t3 baseline adds about a cent per hour with the default workload, and at most $0.16 per hour if both servers run flat out. Backups in the S3 bucket cost $0.023 per GB-month: cents for a lab session. Always run `terraform destroy` when you're done.
 
 Terraform (`terraform/`) builds the infrastructure. Ansible (`ansible/`) installs and configures everything on the servers; [how the Ansible part works](../../ansible/README.md).
 
@@ -30,6 +30,7 @@ Run all commands from a Linux or macOS shell. On Windows, use Ubuntu on WSL (see
    ```bash
    ansible-galaxy collection install -r labs/postgresql-single/ansible/requirements.yml
    ```
+4. Clone [dba-ops-scripts](https://github.com/xXSAPXx/dba-ops-scripts) next to this repository (`dba-ops-scripts/` beside `aws-dba-labs/`): the playbook installs its PostgreSQL backup script from there (`dba_ops_scripts_dir` in `ansible/group_vars/all.yml`).
 
 ## Deploy
 
@@ -42,7 +43,7 @@ cd ../ansible
 ansible-playbook site.yml    # about 11 minutes on the first run, 3 after that
 ```
 
-`terraform apply` also writes the SSH config (`~/.ssh/aws-postgresql-lab.conf`) and the Ansible inventory (`ansible/inventory.ini`) with the new IPs and the backup bucket. The playbook installs PostgreSQL and PMM, sets up pgBackRest with WAL archiving to the bucket, generates the lab passwords into `ansible/credentials/`, registers PostgreSQL in PMM, builds the shop database with Liquibase (the first run also generates its data, about 5 minutes), and starts the application: the labapp probe and the shop workload.
+`terraform apply` also writes the SSH config (`~/.ssh/aws-postgresql-lab.conf`) and the Ansible inventory (`ansible/inventory.ini`) with the new IPs, the disks, the backup bucket and the passphrase's secret. The playbook installs PostgreSQL and PMM, sets up pgBackRest (encrypted) with WAL archiving to the bucket and the backup script with its cron, generates the lab passwords into `ansible/credentials/`, registers PostgreSQL in PMM, builds the shop database with Liquibase (the first run also generates its data, about 5 minutes), and starts the application: the labapp probe and the shop workload. Last, it takes the first full backup (about a minute).
 
 The two servers are set up at the same time, and the shop's data is generated while PMM is still being installed: the long steps overlap. If the new NAT gateway is slow to pass traffic, the first run takes a minute or two longer.
 
@@ -266,30 +267,51 @@ The `grep` runs in a root shell because only `postgres` and root can read the lo
 
 ## Backups: pgBackRest and the S3 bucket
 
-Terraform creates an S3 bucket for pgBackRest and gives `postgresql-source` an IAM role to use it, with no keys on the server. The playbook (role `pgbackrest`) sets pgBackRest up in the order you would by hand:
+Terraform creates an S3 bucket for pgBackRest and the pg_dump backups, gives `postgresql-source` an IAM role to use it (no keys on the server), and puts the repository's passphrase in Secrets Manager. The playbook (role `pgbackrest`) sets pgBackRest up in the order you would by hand:
 
-1. **`/etc/pgbackrest.conf`**, every setting commented.
+1. **`/etc/pgbackrest.conf`**, every setting commented. The repository is encrypted: the server reads the passphrase from Secrets Manager with its role.
 2. **The stanza** `postgresql-single`: the repository's control files in the bucket, below `/pgbackrest/postgresql-single`. They hold the cluster's version and system identifier, so the repository accepts WAL and backups only from this cluster. Created once, on a new lab.
 3. **WAL archiving** in `conf.d/02-pgbackrest.conf`: `archive_mode`, `archive_command` (pgBackRest's `archive-push`) and `archive_timeout = 60s`, then a restart. It is written only after the stanza exists: an `archive_command` that keeps failing makes `pg_wal` grow until the disk is full.
 4. **`pgbackrest check`** on every run: it forces a WAL switch and waits until the segment is in the bucket. If it isn't, the playbook fails there.
 
-No backup is taken or scheduled. Take them by hand, always as `postgres`:
+### The backup script
+
+The playbook (role `postgresql_backup_script`) installs [`postgresql_backup_v1_aws.sh`](https://github.com/xXSAPXx/dba-ops-scripts/tree/main/postgresql_prod_backup_scripts) from dba-ops-scripts as on a production server: in `/opt/scripts`, with its log rotation and cron. At the end of a deploy it takes the first full backup, so the incremental backups have one to build on and the lab has a backup to restore from at once.
+
+| When (UTC) | Option | What |
+|---|---|---|
+| Monday and Friday 02:00 | `--pgbackrest` | full backup into pgBackRest's repository |
+| The other days 02:00 | `--pgbackrest_incremental` | what changed since the last backup of the chain |
+| Every day 04:00 | `--pg_dump` | every database and the roles, as an encrypted archive in `pg_dump/`. S3 deletes the archives after 7 days (`pg_dump_retention_days` in `terraform.tfvars`) |
+
+The schedule is `postgresql_backup_script_cron`: for a lab session of a few hours, set a faster one in `ansible/group_vars/postgresql.yml` (an example is in the role's defaults). By hand, as root:
 
 ```bash
 ssh postgresql-source
-sudo -iu postgres
-pgbackrest --stanza=postgresql-single --type=full backup    # the shop's 1.7 GB: about 25 s, 350 MB in the bucket
-pgbackrest --stanza=postgresql-single --type=incr backup    # about 20 s, 30-35 MB
-pgbackrest info
+sudo /opt/scripts/postgresql_backup_v1_aws.sh --pgbackrest               # the shop's 1.7 GB, encrypted: about 75 s, 400 MB
+sudo /opt/scripts/postgresql_backup_v1_aws.sh --pgbackrest_incremental   # about 1 minute, 40 MB
+sudo /opt/scripts/postgresql_backup_v1_aws.sh --pg_dump                  # about 45 s, a 190 MB archive
+sudo less -R /var/log/postgresql_backup.log
+sudo -iu postgres pgbackrest --stanza=postgresql-single info
 ```
 
-The settings, and why:
+- **The lock:** during every backup the script holds the advisory lock `backup_running` in the shop database. Jobs that must not run during a backup take it first: `SELECT pg_try_advisory_lock(hashtextextended('backup_running', 0))` answers `f` while a backup runs.
+- **Metrics:** `node_postgresql_backup_*`, `node_postgresql_incremental_backup_*` and `node_postgresql_logical_backup_*`, through node_exporter's textfile folder into the lab's Prometheus.
+- **`/backup`:** the newest pg_dump folder (unencrypted, for a day or two) and 3 days of archives.
+- **pgBackRest by hand** works as before, as `postgres` (`pgbackrest --stanza=postgresql-single --type=full backup`), without the lock and the metrics.
+
+How the script works, step by step: [its workflow](https://github.com/xXSAPXx/dba-ops-scripts/blob/main/postgresql_prod_backup_scripts/postgresql_backup_workflow.md).
+
+### pgBackRest's settings
+
+Why each setting:
 
 | Setting | Value |
 |---|---|
 | `repo1-type`, `repo1-s3-bucket`, `repo1-s3-region`, `repo1-s3-endpoint` | `s3`, the bucket and region from Terraform (`terraform output backup_bucket`) |
 | `repo1-s3-key-type` | `auto`: the credentials come from the server's IAM role |
-| `repo1-path` | `/pgbackrest/postgresql-single`: one folder per cluster; the role allows only `/pgbackrest/` |
+| `repo1-path` | `/pgbackrest/postgresql-single`: one folder per cluster |
+| `repo1-cipher-type`, `repo1-cipher-pass` | `aes-256-cbc` and the passphrase from Secrets Manager: the repository is encrypted. The backup script encrypts the pg_dump archives with the same passphrase (gpg) |
 | `repo1-retention-full-type`, `repo1-retention-full` | `time` and `7`: any moment of the last 7 days stays restorable |
 | `repo1-bundle`, `repo1-block` | `y`: small files bundled (fewer S3 requests); incremental backups store only the changed blocks of a file |
 | `process-max` | the server's vCPUs |
@@ -302,6 +324,8 @@ The settings, and why:
 
 Good to know:
 
+- **The passphrase is the backups.** It is in Secrets Manager as `postgresql-single/pgbackrest-cipher-pass` (`terraform output secrets`; read it with `aws secretsmanager get-secret-value --secret-id postgresql-single/pgbackrest-cipher-pass --query SecretString --output text`) and in `/etc/pgbackrest.conf` (root and postgres only). Without it neither the repository nor the pg_dump archives can be read, and a repository's passphrase can't be changed: a new passphrase needs a new repository. The lab deletes it at once, together with the bucket.
+- **A lab deployed before the encryption** has an unencrypted repository, which the encrypted configuration can't open: the playbook's `check` fails there. Destroy the lab and deploy it again.
 - **`ALTER SYSTEM` overrides the files in `conf.d/`.** An `archive_mode` set by hand in `postgresql.auto.conf` wins over `02-pgbackrest.conf`.
 - **In `/etc/pgbackrest.conf`, a comment goes on its own line.** pgBackRest reads `process-max=2 # comment` as the value `2 # comment`.
 - **A restore puts back everything in the data directory, the server log in `log/` and the settings in `conf.d/` included.** Copy `log/` somewhere else first; afterwards, `ansible-playbook site.yml` writes the current settings again (a restart).
@@ -310,15 +334,15 @@ Good to know:
 How the bucket is set up, and why:
 
 - **Private and encrypted:** Block Public Access fully on, ACLs off, SSE-S3 encryption. The bucket policy refuses requests without TLS and anyone outside the AWS account.
-- **The server can reach it only from the VPC:** its role may list, read, write and delete in `pgbackrest/` and nowhere else, and only through the VPC's S3 gateway endpoint. Backup traffic doesn't go through the NAT gateway, which charges per GB. Your own admin user is not limited to the VPC, so the console, the AWS CLI and `terraform destroy` work from your machine.
-- **pgBackRest decides what to keep, never S3.** pgBackRest's retention deletes whole backups together with the WAL they need. An S3 rule that deleted files by age would break the repository: its control file `archive.info` is written once and stays old, and newer backups point to files of older ones. With `archive.info` gone, every WAL upload fails and `pg_wal` fills the disk.
+- **The server can reach it only from the VPC:** its role may list, read, write and delete in `pgbackrest/` and `pg_dump/` and nowhere else, and only through the VPC's S3 gateway endpoint. Backup traffic doesn't go through the NAT gateway, which charges per GB. Your own admin user is not limited to the VPC, so the console, the AWS CLI and `terraform destroy` work from your machine.
+- **pgBackRest decides what to keep, never S3.** pgBackRest's retention deletes whole backups together with the WAL they need. An S3 rule that deleted files by age would break the repository: its control file `archive.info` is written once and stays old, and newer backups point to files of older ones. With `archive.info` gone, every WAL upload fails and `pg_wal` fills the disk. The only age rule is on `pg_dump/`: each archive there stands alone, so S3 deletes them after `pg_dump_retention_days`.
 - **Versioning as a safety net:** whatever pgBackRest deletes or overwrites stays recoverable as an older version for 7 days, then S3 removes it. Unfinished uploads are aborted after a day.
 - **Destroyed with the lab:** `terraform destroy` deletes every object and version, then the bucket. No Object Lock, which would keep the bucket after the lab is gone.
-- **Not for production as is:** a second copy (another region or AWS account), Object Lock against deletion, and pgBackRest's own encryption (`repo1-cipher-type`) belong there.
+- **Not for production as is:** a second copy (another region or AWS account), Object Lock against deletion, and the passphrase kept outside AWS too belong there.
 
 ## Reset the shop database
 
-To get the shop back after something that can't be repaired, such as the `dropped-table` scenario while the lab has no backups, drop the database and let the playbook build it again. It generates new data, so order numbers and amounts differ from before.
+To get the shop back after something that can't be repaired, without a restore (for the `dropped-table` scenario, a point-in-time restore is the real way back: see the backups above), drop the database and let the playbook build it again. It generates new data, so order numbers and amounts differ from before.
 
 ```bash
 ssh pmm-server
@@ -343,7 +367,7 @@ cd labs/postgresql-single/terraform
 terraform destroy
 ```
 
-This also removes the SSH config and the inventory. The passwords stay in `ansible/credentials/` and are reused on the next deploy.
+This also removes the SSH config and the inventory. The passwords stay in `ansible/credentials/` and are reused on the next deploy. The passphrase's secret is deleted at once, together with the bucket and the backups it encrypts.
 
 ## Tested
 
@@ -367,3 +391,12 @@ The deploys of 22 November 2026 checked pgBackRest (2.60.0, Percona's package), 
   - With PostgreSQL still running, pgBackRest refuses: `unable to restore while PostgreSQL is running`.
   - With PostgreSQL stopped: 21 s, then 3 WAL segments from the bucket and 0.14 s of redo. PostgreSQL opened on timeline 2, and the shop's orders ended at the moment the incremental backup did.
   - The restore also put back the backup's `conf.d/01-lab.conf` and `log/`. A playbook run wrote the current settings again.
+
+The deploy of 26 November 2026, from scratch (Terraform 164 s, playbook 886 s), checked the encrypted repository and the backup script:
+- **Encryption:** the repository was created encrypted (`aes-256-cbc`), with the passphrase from Secrets Manager. The passphrase was in none of the playbook's output.
+- **The setup:** `/backup` is mounted. The installed script differs from the one in dba-ops-scripts only in its bucket. The cron file, the log rotation and both lifecycle rules of the bucket are in place.
+- **The first full backup**, by the last play: 21 s, 324 MB in the bucket.
+- **The script by hand:** an incremental in 15 s (29 MB), and a pg_dump in 21 s, its 168 MB archive uploaded to `pg_dump/`.
+- **From cron:** an incremental started by cron itself ran like the others (16 s), with its metrics.
+- **Metrics:** every `node_postgresql_*` metric reached Prometheus.
+- **Running the playbook again** changes nothing.
